@@ -44,14 +44,7 @@
                 <span class="tab-icon">📁</span>
                 Upload de Imagens
             </button>
-            <button class="tab-btn" data-tab="batch-spreadsheet" id="tab-btn-batch-spreadsheet">
-                <span class="tab-icon">📊</span>
-                Planilha
-            </button>
-                        <button class="tab-btn" data-tab="gallery" id="tab-btn-gallery">
-                <span class="tab-icon">🗂️</span>
-                Galeria
-            </button>
+
             <button class="tab-btn" data-tab="anymarket" id="tab-btn-anymarket">
                 <span class="tab-icon">🛒</span>
                 AnyMarket
@@ -149,104 +142,7 @@
             </div>
         </div>
 
-        <!-- ══════════════════════════════════════════════════════
-             TAB 3 — Planilha
-             ══════════════════════════════════════════════════════ -->
-        <div class="tab-content" id="tab-batch-spreadsheet">
-            <div class="section-header">
-                <h2>📊 Processar via Planilha</h2>
-                <p>Envie uma planilha Excel ou CSV com URLs de imagens nas colunas "IMAGEM 1" até "IMAGEM 10".</p>
-            </div>
 
-            <div class="upload-zone" id="spreadsheet-drop-zone">
-                <div class="upload-zone-content">
-                    <span class="upload-icon">📋</span>
-                    <h3>Arraste a planilha aqui</h3>
-                    <p>ou clique para selecionar</p>
-                    <button class="btn-browse" id="spreadsheet-browse-btn">
-                        Selecionar Planilha
-                    </button>
-                    <div class="upload-hint">Formatos: .xlsx, .xls, .csv</div>
-                </div>
-                <input type="file" id="spreadsheet-file-input" accept=".xlsx,.xls,.csv" hidden>
-            </div>
-
-            <div id="spreadsheet-selected" style="display: none;">
-                <div class="file-list">
-                    <div class="file-item">
-                        <span class="file-name">
-                            📋 <span id="spreadsheet-filename"></span>
-                        </span>
-                        <button class="btn-icon" id="spreadsheet-clear-btn" title="Remover">✕</button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="form-grid">
-                <div class="form-group">
-                    <label class="form-label" for="id-col-input">Coluna de ID (opcional)</label>
-                    <input type="text" class="form-input" id="id-col-input"
-                           placeholder="Ex: SKU, CÓDIGO" autocomplete="off">
-                </div>
-                <div class="form-group">
-                    <label class="form-label" for="workers-input">Threads paralelas</label>
-                    <input type="number" class="form-input" id="workers-input"
-                           value="4" min="1" max="16">
-                </div>
-            </div>
-
-            <div class="mt-24">
-                <button class="btn btn-primary" id="spreadsheet-process-btn" disabled>
-                    🚀 Processar Planilha
-                </button>
-            </div>
-
-            <div class="progress-container" id="spreadsheet-progress">
-                <div class="progress-header">
-                    <h4><div class="spinner"></div> Processando URLs…</h4>
-                    <span id="spreadsheet-progress-text">0 / 0</span>
-                </div>
-                <div class="progress-bar-track">
-                    <div class="progress-bar-fill" id="spreadsheet-progress-bar"></div>
-                </div>
-                <div class="progress-status" id="spreadsheet-progress-status">Iniciando…</div>
-            </div>
-        </div>
-
-        <!-- ══════════════════════════════════════════════════════
-             TAB 4 — Galeria de Produtos
-             ══════════════════════════════════════════════════════ -->
-        <div class="tab-content" id="tab-gallery">
-            <div class="section-header">
-                <h2>🗂️ Galeria de Produtos</h2>
-                <p>Navegue pelos produtos já processados.</p>
-            </div>
-
-            <div class="gallery-toolbar">
-                <div class="search-box">
-                    <span class="search-icon">🔍</span>
-                    <input type="text" id="gallery-search" placeholder="Buscar por ID do produto…" autocomplete="off">
-                </div>
-                <button class="btn btn-secondary btn-sm" id="gallery-refresh-btn">
-                    🔄 Atualizar
-                </button>
-            </div>
-
-            <div id="gallery-loading" class="loading-state" style="display: none;">
-                <div class="spinner"></div>
-                Carregando produtos…
-            </div>
-
-            <div class="gallery-grid" id="gallery-grid"></div>
-
-            <div class="empty-state" id="gallery-empty" style="display: none;">
-                <span class="empty-icon">📭</span>
-                <h3>Nenhum produto encontrado</h3>
-                <p>Processe imagens para vê-las aqui.</p>
-            </div>
-
-            <div class="pagination" id="gallery-pagination"></div>
-        </div>
 
         <!-- ══════════════════════════════════════════════════════
              TAB 5 — AnyMarket
@@ -301,24 +197,7 @@
         </div>
     </div>
 
-    <!-- ── Modal de Detalhes do Produto ──────────────────────────── -->
-    <div class="modal-overlay" id="product-modal">
-        <div class="modal">
-            <div class="modal-header">
-                <h3 id="modal-title">Produto</h3>
-                <button class="modal-close" id="modal-close-btn">✕</button>
-            </div>
-            <div class="modal-body">
-                <div class="modal-images" id="modal-images"></div>
-            </div>
-            <div class="modal-footer">
-                <a class="btn btn-primary btn-sm" id="modal-download-btn" href="#" download>
-                    ⬇️ Download ZIP
-                </a>
-                <button class="btn btn-secondary btn-sm" id="modal-close-footer">Fechar</button>
-            </div>
-        </div>
-    </div>
+
 
     <!-- ── Toast Container ──────────────────────────────────────── -->
     <div class="toast-container" id="toast-container"></div>
@@ -536,88 +415,7 @@
         }
     });
 
-    // ═══════════════════════════════════════════════════════════════
-    // TAB 3 — Spreadsheet
-    // ═══════════════════════════════════════════════════════════════
 
-    const spreadsheetDropZone = document.getElementById('spreadsheet-drop-zone');
-    const spreadsheetFileInput = document.getElementById('spreadsheet-file-input');
-    const spreadsheetBrowseBtn = document.getElementById('spreadsheet-browse-btn');
-    const spreadsheetSelected = document.getElementById('spreadsheet-selected');
-    const spreadsheetFilename = document.getElementById('spreadsheet-filename');
-    const spreadsheetClearBtn = document.getElementById('spreadsheet-clear-btn');
-    const spreadsheetProcessBtn = document.getElementById('spreadsheet-process-btn');
-
-    let spreadsheetFile = null;
-
-    spreadsheetBrowseBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        spreadsheetFileInput.click();
-    });
-    spreadsheetDropZone.addEventListener('click', () => spreadsheetFileInput.click());
-
-    ['dragenter', 'dragover'].forEach(evt => {
-        spreadsheetDropZone.addEventListener(evt, (e) => {
-            e.preventDefault();
-            spreadsheetDropZone.classList.add('drag-over');
-        });
-    });
-    ['dragleave', 'drop'].forEach(evt => {
-        spreadsheetDropZone.addEventListener(evt, (e) => {
-            e.preventDefault();
-            spreadsheetDropZone.classList.remove('drag-over');
-        });
-    });
-    spreadsheetDropZone.addEventListener('drop', (e) => {
-        const file = e.dataTransfer.files[0];
-        if (file) setSpreadsheetFile(file);
-    });
-
-    spreadsheetFileInput.addEventListener('change', () => {
-        if (spreadsheetFileInput.files[0]) setSpreadsheetFile(spreadsheetFileInput.files[0]);
-    });
-
-    function setSpreadsheetFile(file) {
-        const validExts = ['.xlsx', '.xls', '.csv'];
-        if (!validExts.some(ext => file.name.toLowerCase().endsWith(ext))) {
-            showToast('Formato não suportado. Use .xlsx, .xls ou .csv', 'error');
-            return;
-        }
-        spreadsheetFile = file;
-        spreadsheetFilename.textContent = file.name;
-        spreadsheetSelected.style.display = '';
-        spreadsheetProcessBtn.disabled = false;
-    }
-
-    spreadsheetClearBtn.addEventListener('click', () => {
-        spreadsheetFile = null;
-        spreadsheetSelected.style.display = 'none';
-        spreadsheetProcessBtn.disabled = true;
-        spreadsheetFileInput.value = '';
-    });
-
-    spreadsheetProcessBtn.addEventListener('click', async () => {
-        if (!spreadsheetFile) return;
-
-        const fd = new FormData();
-        fd.append('spreadsheet', spreadsheetFile);
-        fd.append('id_col', document.getElementById('id-col-input').value);
-        fd.append('workers', document.getElementById('workers-input').value);
-
-        spreadsheetProcessBtn.disabled = true;
-
-        try {
-            const resp = await fetch('/api/upload-spreadsheet', { method: 'POST', body: fd });
-            const data = await resp.json();
-            if (!resp.ok) throw new Error(data.error);
-
-            showToast(`Job iniciado: ${data.total} URLs`, 'info');
-            pollJob(data.job_id, 'spreadsheet');
-        } catch (e) {
-            showToast('Erro: ' + e.message, 'error');
-            spreadsheetProcessBtn.disabled = false;
-        }
-    });
 
     // ═══════════════════════════════════════════════════════════════
     // Job Polling
@@ -659,77 +457,7 @@
         }, 1500);
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // TAB 4 — Gallery
-    // ═══════════════════════════════════════════════════════════════
 
-    let galleryPage = 1;
-    let gallerySearch = '';
-    let searchDebounce;
-
-    document.getElementById('gallery-search').addEventListener('input', (e) => {
-        clearTimeout(searchDebounce);
-        searchDebounce = setTimeout(() => {
-            gallerySearch = e.target.value;
-            galleryPage = 1;
-            loadGallery();
-        }, 350);
-    });
-
-    document.getElementById('gallery-refresh-btn').addEventListener('click', () => loadGallery());
-
-    async function loadGallery() {
-        const grid = document.getElementById('gallery-grid');
-        const loading = document.getElementById('gallery-loading');
-        const empty = document.getElementById('gallery-empty');
-        const pagination = document.getElementById('gallery-pagination');
-
-        loading.style.display = '';
-        grid.innerHTML = '';
-        empty.style.display = 'none';
-
-        try {
-            const params = new URLSearchParams({
-                page: galleryPage,
-                per_page: 30,
-                search: gallerySearch,
-            });
-            const resp = await fetch(`/api/products?${params}`);
-            const data = await resp.json();
-
-            loading.style.display = 'none';
-
-            if (!data.products.length) {
-                empty.style.display = '';
-                pagination.innerHTML = '';
-                return;
-            }
-
-            grid.innerHTML = data.products.map(p => `
-                <div class="product-card" data-id="${p.id}" onclick="openProduct('${p.id}')">
-                    <img class="product-card-image"
-                         src="/api/image/${p.id}/${p.images[0]}"
-                         alt="Produto ${p.id}"
-                         loading="lazy">
-                    <div class="product-card-footer">
-                        <span class="product-card-id">#${p.id}</span>
-                        <span class="product-card-count">${p.count} img${p.count > 1 ? 's' : ''}</span>
-                    </div>
-                </div>
-            `).join('');
-
-            // Pagination
-            let pagHtml = '';
-            pagHtml += `<button ${galleryPage <= 1 ? 'disabled' : ''} onclick="galleryPage--; loadGallery()">← Anterior</button>`;
-            pagHtml += `<span class="page-info">Página ${data.page} de ${data.total_pages} (${data.total} produtos)</span>`;
-            pagHtml += `<button ${galleryPage >= data.total_pages ? 'disabled' : ''} onclick="galleryPage++; loadGallery()">Próxima →</button>`;
-            pagination.innerHTML = pagHtml;
-
-        } catch (e) {
-            loading.style.display = 'none';
-            showToast('Erro ao carregar galeria', 'error');
-        }
-    }
 
 
     // ═══════════════════════════════════════════════════════════════
@@ -841,54 +569,7 @@
         };
     }
 
-    // ── Product Modal ───────────────────────────────────────────
 
-    const modal = document.getElementById('product-modal');
-    const modalTitle = document.getElementById('modal-title');
-    const modalImages = document.getElementById('modal-images');
-    const modalDownloadBtn = document.getElementById('modal-download-btn');
-
-    async function openProduct(productId) {
-        modalTitle.textContent = `Produto #${productId}`;
-        modalDownloadBtn.href = `/api/download/${productId}`;
-        modalImages.innerHTML = '<div class="loading-state"><div class="spinner"></div> Carregando…</div>';
-        modal.classList.add('active');
-
-        try {
-            const params = new URLSearchParams({ search: productId, per_page: 1 });
-            const resp = await fetch(`/api/products?${params}`);
-            const data = await resp.json();
-            const product = data.products.find(p => p.id === productId);
-
-            if (!product) {
-                modalImages.innerHTML = '<p>Produto não encontrado</p>';
-                return;
-            }
-
-            modalImages.innerHTML = product.images.map(img => `
-                <div class="modal-img-card">
-                    <img src="/api/image/${productId}/${img}" alt="${img}" loading="lazy">
-                    <div class="modal-img-label">${img}</div>
-                </div>
-            `).join('');
-
-        } catch (e) {
-            modalImages.innerHTML = '<p>Erro ao carregar imagens</p>';
-        }
-    }
-
-    document.getElementById('modal-close-btn').addEventListener('click', () => modal.classList.remove('active'));
-    document.getElementById('modal-close-footer').addEventListener('click', () => modal.classList.remove('active'));
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) modal.classList.remove('active');
-    });
-
-    // Fechar modal com ESC
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && modal.classList.contains('active')) {
-            modal.classList.remove('active');
-        }
-    });
 
     </script>
 </body>

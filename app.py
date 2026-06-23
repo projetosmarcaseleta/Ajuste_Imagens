@@ -51,7 +51,7 @@ TEMP_DIR.mkdir(exist_ok=True)
 # ── Configurações AnyMarket / n8n ───────────────────────────────────────
 N8N_HOST = 'api.marcaseleta.shop'
 N8N_PORT = 80
-N8N_PATH = '/webhook/resizer/buscar-imagens'
+N8N_PATH = '/webhook/background'
 AM_HOST = 'api.anymarket.com.br'
 SELF_BASE = 'https://app.marcaseleta.shop/background-remover'
 CONCURRENCY = 5
@@ -362,62 +362,7 @@ def serve_temp(filename):
         return "Not found", 404
     return send_from_directory(TEMP_DIR, filename, mimetype="image/jpeg")
 
-# ── API: listar produtos já processados ─────────────────────────────────
 
-@app.route("/api/products")
-def list_products():
-    """Retorna lista de pastas/produtos na pasta de saída."""
-    if not OUTPUT_DIR.exists():
-        return jsonify([])
-
-    products = []
-    search = request.args.get("search", "").strip().lower()
-    page = int(request.args.get("page", 1))
-    per_page = int(request.args.get("per_page", 30))
-
-    all_dirs = sorted(
-        [d for d in OUTPUT_DIR.iterdir() if d.is_dir()],
-        key=lambda d: d.name,
-        reverse=True,
-    )
-
-    if search:
-        all_dirs = [d for d in all_dirs if search in d.name.lower()]
-
-    total = len(all_dirs)
-    start = (page - 1) * per_page
-    end = start + per_page
-    page_dirs = all_dirs[start:end]
-
-    for d in page_dirs:
-        images = sorted(
-            [f.name for f in d.iterdir()
-             if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS]
-        )
-        if images:
-            products.append({
-                "id": d.name,
-                "images": images,
-                "count": len(images),
-            })
-
-    return jsonify({
-        "products": products,
-        "total": total,
-        "page": page,
-        "per_page": per_page,
-        "total_pages": (total + per_page - 1) // per_page,
-    })
-
-
-# ── API: servir imagem processada ───────────────────────────────────────
-
-@app.route("/api/image/<product_id>/<filename>")
-def serve_image(product_id, filename):
-    folder = OUTPUT_DIR / product_id
-    if not folder.exists():
-        return jsonify({"error": "Produto não encontrado"}), 404
-    return send_from_directory(folder, filename)
 
 
 # ── API: processar imagens enviadas (upload direto) ─────────────────────
@@ -487,79 +432,7 @@ def _process_images_job(job_id: str, images: list[Path]):
         shutil.rmtree(upload_dir, ignore_errors=True)
 
 
-# ── API: processar planilha ─────────────────────────────────────────────
 
-@app.route("/api/upload-spreadsheet", methods=["POST"])
-def upload_spreadsheet():
-    """Recebe planilha e processa URLs em background."""
-    file = request.files.get("spreadsheet")
-    if not file:
-        return jsonify({"error": "Nenhuma planilha enviada"}), 400
-
-    suffix = Path(file.filename).suffix.lower()
-    if suffix not in {".xlsx", ".xls", ".csv"}:
-        return jsonify({"error": "Formato não suportado. Use .xlsx, .xls ou .csv"}), 400
-
-    job_id = str(uuid.uuid4())[:8]
-    job_upload_dir = UPLOAD_DIR / job_id
-    job_upload_dir.mkdir(parents=True, exist_ok=True)
-
-    spreadsheet_path = job_upload_dir / f"planilha{suffix}"
-    file.save(spreadsheet_path)
-
-    id_col = request.form.get("id_col", "").strip() or None
-    workers = int(request.form.get("workers", 4))
-
-    # Ler planilha para contar URLs
-    try:
-        rows = load_spreadsheet(spreadsheet_path, id_col)
-    except SystemExit:
-        return jsonify({"error": "Erro ao ler a planilha. Verifique as colunas."}), 400
-
-    if not rows:
-        return jsonify({"error": "Nenhuma URL válida encontrada na planilha."}), 400
-
-    with jobs_lock:
-        jobs[job_id] = {
-            "id": job_id,
-            "type": "spreadsheet",
-            "status": "processing",
-            "total": len(rows),
-            "done": 0,
-            "errors": [],
-            "started_at": time.time(),
-        }
-
-    thread = threading.Thread(
-        target=_process_spreadsheet_job,
-        args=(job_id, rows, workers),
-        daemon=True,
-    )
-    thread.start()
-
-    return jsonify({"job_id": job_id, "total": len(rows)})
-
-
-def _process_spreadsheet_job(job_id: str, rows: list[tuple[str, str]], workers: int):
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
-    for url, relative in rows:
-        dest = OUTPUT_DIR / relative
-        dest.parent.mkdir(parents=True, exist_ok=True)
-
-        label, ok, err = process_from_url(url, dest)
-        with jobs_lock:
-            jobs[job_id]["done"] += 1
-            if not ok:
-                jobs[job_id]["errors"].append({"file": label, "error": err})
-
-    with jobs_lock:
-        jobs[job_id]["status"] = "completed"
-
-    # Limpar uploads
-    upload_dir = UPLOAD_DIR / job_id
-    if upload_dir.exists():
-        shutil.rmtree(upload_dir, ignore_errors=True)
 
 
 # ── API: processar imagem única (preview rápido) ────────────────────────
@@ -618,28 +491,7 @@ def stats():
     })
 
 
-# ── API: download de todas as imagens de um produto como ZIP ────────────
 
-@app.route("/api/download/<product_id>")
-def download_product(product_id):
-    folder = OUTPUT_DIR / product_id
-    if not folder.exists():
-        return jsonify({"error": "Produto não encontrado"}), 404
-
-    buf = io.BytesIO()
-    import zipfile
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for f in folder.iterdir():
-            if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS:
-                zf.write(f, f.name)
-
-    buf.seek(0)
-    return send_file(
-        buf,
-        mimetype="application/zip",
-        download_name=f"{product_id}.zip",
-        as_attachment=True,
-    )
 
 
 # ── Iniciar servidor ────────────────────────────────────────────────────
