@@ -22,4 +22,4 @@ EXPOSE 3003
 RUN mkdir -p uploads saida
 
 # Inicia a aplicação usando gunicorn na porta 3003, com timeout alto para processamento
-CMD ["gunicorn", "--workers", "2", "--bind", "0.0.0.0:3003", "--timeout", "300", "app:app"]
+CMD ["gunicorn", "--workers", "1", "--threads", "8", "--bind", "0.0.0.0:3003", "--timeout", "300", "app:app"]
