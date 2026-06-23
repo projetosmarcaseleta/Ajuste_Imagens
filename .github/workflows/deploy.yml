@@ -26,7 +26,22 @@ jobs:
           target: "/opt/projeto_imagens" # Pasta destino na VPS
           rm: false # Não remove arquivos antes de copiar, para manter uploads e db se existirem
           
-      # 3. Executa o docker-compose para recriar e rodar o app atualizado
+      # 3. Garante que o Docker Compose V2 está instalado na VPS
+      - name: Ensure Docker Compose V2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            # Instala o plugin docker-compose v2 se não existir
+            if ! docker compose version > /dev/null 2>&1; then
+              echo "Instalando Docker Compose V2..."
+              sudo apt-get update && sudo apt-get install -y docker-compose-plugin
+            fi
+            docker compose version
+
+      # 4. Executa o docker compose para recriar e rodar o app atualizado
       - name: Deploy with Docker Compose
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -35,5 +50,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /opt/projeto_imagens
+            # Para containers antigos se existirem
+            docker compose down --remove-orphans || true
             # Recria a imagem para atualizar com as mudanças de código e roda em background
-            docker-compose up -d --build
+            docker compose up -d --build
