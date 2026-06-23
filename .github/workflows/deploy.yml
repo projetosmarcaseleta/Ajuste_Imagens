@@ -1,0 +1,39 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main
+      - master # Adicionado caso a sua branch principal seja master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Baixa o código do repositório para o ambiente do Github Actions
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # 2. Copia os arquivos do repositório para a VPS via SCP (SSH)
+      - name: Copy files to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "."
+          target: "/opt/projeto_imagens" # Pasta destino na VPS
+          rm: false # Não remove arquivos antes de copiar, para manter uploads e db se existirem
+          
+      # 3. Executa o docker-compose para recriar e rodar o app atualizado
+      - name: Deploy with Docker Compose
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /opt/projeto_imagens
+            # Recria a imagem para atualizar com as mudanças de código e roda em background
+            docker-compose up -d --build
