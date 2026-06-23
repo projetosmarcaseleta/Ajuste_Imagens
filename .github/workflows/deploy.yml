@@ -34,14 +34,21 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Instala o plugin docker-compose v2 se não existir
-            if ! docker compose version > /dev/null 2>&1; then
-              echo "Instalando Docker Compose V2..."
-              sudo apt-get update && sudo apt-get install -y docker-compose-plugin
+            # Verifica se já tem compose v2 (plugin ou standalone)
+            if docker compose version > /dev/null 2>&1; then
+              echo "Docker Compose V2 (plugin) já instalado"
+              docker compose version
+            elif docker-compose version 2>&1 | grep -q "v2"; then
+              echo "Docker Compose V2 (standalone) já instalado"
+              docker-compose version
+            else
+              echo "Instalando Docker Compose V2 standalone..."
+              sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /usr/local/bin/docker-compose
+              sudo chmod +x /usr/local/bin/docker-compose
+              docker-compose version
             fi
-            docker compose version
 
-      # 4. Executa o docker compose para recriar e rodar o app atualizado
+      # 4. Executa o docker-compose para recriar e rodar o app atualizado
       - name: Deploy with Docker Compose
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -51,6 +58,6 @@ jobs:
           script: |
             cd /opt/projeto_imagens
             # Para containers antigos se existirem
-            docker compose down --remove-orphans || true
+            docker-compose down --remove-orphans || true
             # Recria a imagem para atualizar com as mudanças de código e roda em background
-            docker compose up -d --build
+            docker-compose up -d --build
