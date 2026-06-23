@@ -51,7 +51,7 @@ TEMP_DIR.mkdir(exist_ok=True)
 # ── Configurações AnyMarket / n8n ───────────────────────────────────────
 N8N_HOST = 'api.marcaseleta.shop'
 N8N_PORT = 80
-N8N_PATH = '/webhook/resizer/buscar-imagens'
+N8N_PATH = '/webhook/background'
 AM_HOST = 'api.anymarket.com.br'
 SELF_BASE = 'https://app.marcaseleta.shop/background-remover'
 CONCURRENCY = 5
