@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Ferramenta para remoção de fundo de imagens de produtos, substituindo por branco puro.">
+    <title>BG Remover — Remoção de Fundo de Imagens</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🖼️</text></svg>">
+</head>
+<body>
+    <div class="app-container">
+
+        <!-- ── Header / Nav ─────────────────────────────────────── -->
+        <nav class="nav-header">
+            <div class="nav-brand">
+                <div class="nav-brand-icon">🖼️</div>
+                <div class="nav-brand-text">
+                    <h1>BG Remover</h1>
+                    <span>Remoção de fundo para produtos</span>
+                </div>
+            </div>
+            <div class="nav-stats">
+                <div class="stat-chip">
+                    <span class="stat-icon">📦</span>
+                    <span>Produtos:</span>
+                    <span class="stat-value" id="stat-products">—</span>
+                </div>
+                <div class="stat-chip">
+                    <span class="stat-icon">🖼️</span>
+                    <span>Imagens:</span>
+                    <span class="stat-value" id="stat-images">—</span>
+                </div>
+            </div>
+        </nav>
+
+        <!-- ── Tab Navigation ───────────────────────────────────── -->
+        <div class="tab-nav" id="tab-nav">
+            <button class="tab-btn active" data-tab="preview" id="tab-btn-preview">
+                <span class="tab-icon">⚡</span>
+                Preview Rápido
+            </button>
+            <button class="tab-btn" data-tab="batch-images" id="tab-btn-batch-images">
+                <span class="tab-icon">📁</span>
+                Upload de Imagens
+            </button>
+            <button class="tab-btn" data-tab="batch-spreadsheet" id="tab-btn-batch-spreadsheet">
+                <span class="tab-icon">📊</span>
+                Planilha
+            </button>
+            <button class="tab-btn" data-tab="gallery" id="tab-btn-gallery">
+                <span class="tab-icon">🗂️</span>
+                Galeria
+            </button>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════
+             TAB 1 — Preview Rápido
+             ══════════════════════════════════════════════════════ -->
+        <div class="tab-content active" id="tab-preview">
+            <div class="section-header">
+                <h2>⚡ Preview Rápido</h2>
+                <p>Faça upload de uma imagem e veja o resultado com fundo branco instantaneamente.</p>
+            </div>
+
+            <div class="upload-zone" id="preview-drop-zone">
+                <div class="upload-zone-content">
+                    <span class="upload-icon">📸</span>
+                    <h3>Arraste uma imagem aqui</h3>
+                    <p>ou clique para selecionar do seu computador</p>
+                    <button class="btn-browse" id="preview-browse-btn">
+                        Selecionar Imagem
+                    </button>
+                    <div class="upload-hint">JPG, PNG, WEBP — máx. 20MB</div>
+                </div>
+                <input type="file" id="preview-file-input" accept=".jpg,.jpeg,.png,.webp" hidden>
+            </div>
+
+            <div class="preview-panel" id="preview-panel" style="display: none;">
+                <div class="preview-box">
+                    <div class="preview-box-header">
+                        🔵 Original
+                    </div>
+                    <div class="preview-box-body">
+                        <img id="preview-original" alt="Imagem original">
+                    </div>
+                </div>
+                <div class="preview-box">
+                    <div class="preview-box-header">
+                        ✅ Processada — Fundo Branco
+                    </div>
+                    <div class="preview-box-body" id="preview-result-body">
+                        <div class="loading-state" id="preview-loading" style="display: none;">
+                            <div class="spinner"></div>
+                            Processando imagem…
+                        </div>
+                        <img id="preview-result" alt="Imagem processada" style="display: none;">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════
+             TAB 2 — Upload em Lote
+             ══════════════════════════════════════════════════════ -->
+        <div class="tab-content" id="tab-batch-images">
+            <div class="section-header">
+                <h2>📁 Upload de Imagens em Lote</h2>
+                <p>Envie várias imagens de uma vez para processamento em background.</p>
+            </div>
+
+            <div class="upload-zone" id="batch-drop-zone">
+                <div class="upload-zone-content">
+                    <span class="upload-icon">📂</span>
+                    <h3>Arraste imagens aqui</h3>
+                    <p>ou clique para selecionar múltiplas imagens</p>
+                    <button class="btn-browse" id="batch-browse-btn">
+                        Selecionar Imagens
+                    </button>
+                    <div class="upload-hint">Suporta JPG, PNG, WEBP — múltiplos arquivos</div>
+                </div>
+                <input type="file" id="batch-file-input" accept=".jpg,.jpeg,.png,.webp" multiple hidden>
+            </div>
+
+            <div class="file-list" id="batch-file-list" style="display: none;"></div>
+
+            <div class="mt-24" style="display: flex; gap: 12px;">
+                <button class="btn btn-primary" id="batch-process-btn" disabled>
+                    🚀 Processar Imagens
+                </button>
+                <button class="btn btn-secondary" id="batch-clear-btn" style="display: none;">
+                    ✕ Limpar
+                </button>
+            </div>
+
+            <div class="progress-container" id="batch-progress">
+                <div class="progress-header">
+                    <h4><div class="spinner"></div> Processando…</h4>
+                    <span id="batch-progress-text">0 / 0</span>
+                </div>
+                <div class="progress-bar-track">
+                    <div class="progress-bar-fill" id="batch-progress-bar"></div>
+                </div>
+                <div class="progress-status" id="batch-progress-status">Iniciando processamento…</div>
+            </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════
+             TAB 3 — Planilha
+             ══════════════════════════════════════════════════════ -->
+        <div class="tab-content" id="tab-batch-spreadsheet">
+            <div class="section-header">
+                <h2>📊 Processar via Planilha</h2>
+                <p>Envie uma planilha Excel ou CSV com URLs de imagens nas colunas "IMAGEM 1" até "IMAGEM 10".</p>
+            </div>
+
+            <div class="upload-zone" id="spreadsheet-drop-zone">
+                <div class="upload-zone-content">
+                    <span class="upload-icon">📋</span>
+                    <h3>Arraste a planilha aqui</h3>
+                    <p>ou clique para selecionar</p>
+                    <button class="btn-browse" id="spreadsheet-browse-btn">
+                        Selecionar Planilha
+                    </button>
+                    <div class="upload-hint">Formatos: .xlsx, .xls, .csv</div>
+                </div>
+                <input type="file" id="spreadsheet-file-input" accept=".xlsx,.xls,.csv" hidden>
+            </div>
+
+            <div id="spreadsheet-selected" style="display: none;">
+                <div class="file-list">
+                    <div class="file-item">
+                        <span class="file-name">
+                            📋 <span id="spreadsheet-filename"></span>
+                        </span>
+                        <button class="btn-icon" id="spreadsheet-clear-btn" title="Remover">✕</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-grid">
+                <div class="form-group">
+                    <label class="form-label" for="id-col-input">Coluna de ID (opcional)</label>
+                    <input type="text" class="form-input" id="id-col-input"
+                           placeholder="Ex: SKU, CÓDIGO" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="workers-input">Threads paralelas</label>
+                    <input type="number" class="form-input" id="workers-input"
+                           value="4" min="1" max="16">
+                </div>
+            </div>
+
+            <div class="mt-24">
+                <button class="btn btn-primary" id="spreadsheet-process-btn" disabled>
+                    🚀 Processar Planilha
+                </button>
+            </div>
+
+            <div class="progress-container" id="spreadsheet-progress">
+                <div class="progress-header">
+                    <h4><div class="spinner"></div> Processando URLs…</h4>
+                    <span id="spreadsheet-progress-text">0 / 0</span>
+                </div>
+                <div class="progress-bar-track">
+                    <div class="progress-bar-fill" id="spreadsheet-progress-bar"></div>
+                </div>
+                <div class="progress-status" id="spreadsheet-progress-status">Iniciando…</div>
+            </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════
+             TAB 4 — Galeria de Produtos
+             ══════════════════════════════════════════════════════ -->
+        <div class="tab-content" id="tab-gallery">
+            <div class="section-header">
+                <h2>🗂️ Galeria de Produtos</h2>
+                <p>Navegue pelos produtos já processados.</p>
+            </div>
+
+            <div class="gallery-toolbar">
+                <div class="search-box">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="gallery-search" placeholder="Buscar por ID do produto…" autocomplete="off">
+                </div>
+                <button class="btn btn-secondary btn-sm" id="gallery-refresh-btn">
+                    🔄 Atualizar
+                </button>
+            </div>
+
+            <div id="gallery-loading" class="loading-state" style="display: none;">
+                <div class="spinner"></div>
+                Carregando produtos…
+            </div>
+
+            <div class="gallery-grid" id="gallery-grid"></div>
+
+            <div class="empty-state" id="gallery-empty" style="display: none;">
+                <span class="empty-icon">📭</span>
+                <h3>Nenhum produto encontrado</h3>
+                <p>Processe imagens para vê-las aqui.</p>
+            </div>
+
+            <div class="pagination" id="gallery-pagination"></div>
+        </div>
+
+    </div>
+
+    <!-- ── Modal de Detalhes do Produto ──────────────────────────── -->
+    <div class="modal-overlay" id="product-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="modal-title">Produto</h3>
+                <button class="modal-close" id="modal-close-btn">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-images" id="modal-images"></div>
+            </div>
+            <div class="modal-footer">
+                <a class="btn btn-primary btn-sm" id="modal-download-btn" href="#" download>
+                    ⬇️ Download ZIP
+                </a>
+                <button class="btn btn-secondary btn-sm" id="modal-close-footer">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Toast Container ──────────────────────────────────────── -->
+    <div class="toast-container" id="toast-container"></div>
+
+
+    <script>
+    /* ═══════════════════════════════════════════════════════════════
+       App JavaScript — BG Remover Frontend
+       ═══════════════════════════════════════════════════════════════ */
+
+    // ── Utility ─────────────────────────────────────────────────
+    function formatSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / 1048576).toFixed(1) + ' MB';
+    }
+
+    function showToast(message, type = 'info') {
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        const icons = { success: '✅', error: '❌', info: 'ℹ️' };
+        toast.innerHTML = `<span>${icons[type] || 'ℹ️'}</span> ${message}`;
+        container.appendChild(toast);
+        setTimeout(() => {
+            toast.style.animation = 'toastOut 0.3s ease forwards';
+            setTimeout(() => toast.remove(), 300);
+        }, 4000);
+    }
+
+    // ── Tab Navigation ──────────────────────────────────────────
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById(`tab-${btn.dataset.tab}`).classList.add('active');
+
+            if (btn.dataset.tab === 'gallery') loadGallery();
+        });
+    });
+
+    // ── Load Stats ──────────────────────────────────────────────
+    async function loadStats() {
+        try {
+            const resp = await fetch('/api/stats');
+            const data = await resp.json();
+            document.getElementById('stat-products').textContent =
+                data.total_products.toLocaleString('pt-BR');
+            document.getElementById('stat-images').textContent =
+                data.total_images.toLocaleString('pt-BR');
+        } catch (e) {
+            console.error('Erro ao carregar stats:', e);
+        }
+    }
+    loadStats();
+
+    // ═══════════════════════════════════════════════════════════════
+    // TAB 1 — Preview Rápido
+    // ═══════════════════════════════════════════════════════════════
+
+    const previewDropZone = document.getElementById('preview-drop-zone');
+    const previewFileInput = document.getElementById('preview-file-input');
+    const previewBrowseBtn = document.getElementById('preview-browse-btn');
+    const previewPanel = document.getElementById('preview-panel');
+    const previewOriginal = document.getElementById('preview-original');
+    const previewResult = document.getElementById('preview-result');
+    const previewLoading = document.getElementById('preview-loading');
+
+    previewBrowseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        previewFileInput.click();
+    });
+
+    previewDropZone.addEventListener('click', () => previewFileInput.click());
+
+    // Drag & drop
+    ['dragenter', 'dragover'].forEach(evt => {
+        previewDropZone.addEventListener(evt, (e) => {
+            e.preventDefault();
+            previewDropZone.classList.add('drag-over');
+        });
+    });
+    ['dragleave', 'drop'].forEach(evt => {
+        previewDropZone.addEventListener(evt, (e) => {
+            e.preventDefault();
+            previewDropZone.classList.remove('drag-over');
+        });
+    });
+    previewDropZone.addEventListener('drop', (e) => {
+        const file = e.dataTransfer.files[0];
+        if (file) processPreview(file);
+    });
+
+    previewFileInput.addEventListener('change', () => {
+        if (previewFileInput.files[0]) processPreview(previewFileInput.files[0]);
+    });
+
+    async function processPreview(file) {
+        // Show original
+        previewPanel.style.display = '';
+        previewOriginal.src = URL.createObjectURL(file);
+
+        // Show loading, hide old result
+        previewLoading.style.display = '';
+        previewResult.style.display = 'none';
+
+        try {
+            const fd = new FormData();
+            fd.append('image', file);
+            const resp = await fetch('/api/preview', { method: 'POST', body: fd });
+            if (!resp.ok) {
+                const err = await resp.json();
+                throw new Error(err.error || 'Erro no processamento');
+            }
+            const blob = await resp.blob();
+            previewResult.src = URL.createObjectURL(blob);
+            previewResult.style.display = '';
+            previewLoading.style.display = 'none';
+            showToast('Imagem processada com sucesso!', 'success');
+        } catch (e) {
+            previewLoading.style.display = 'none';
+            showToast('Erro: ' + e.message, 'error');
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // TAB 2 — Batch Images
+    // ═══════════════════════════════════════════════════════════════
+
+    const batchDropZone = document.getElementById('batch-drop-zone');
+    const batchFileInput = document.getElementById('batch-file-input');
+    const batchBrowseBtn = document.getElementById('batch-browse-btn');
+    const batchFileList = document.getElementById('batch-file-list');
+    const batchProcessBtn = document.getElementById('batch-process-btn');
+    const batchClearBtn = document.getElementById('batch-clear-btn');
+
+    let batchFiles = [];
+
+    batchBrowseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        batchFileInput.click();
+    });
+    batchDropZone.addEventListener('click', () => batchFileInput.click());
+
+    ['dragenter', 'dragover'].forEach(evt => {
+        batchDropZone.addEventListener(evt, (e) => {
+            e.preventDefault();
+            batchDropZone.classList.add('drag-over');
+        });
+    });
+    ['dragleave', 'drop'].forEach(evt => {
+        batchDropZone.addEventListener(evt, (e) => {
+            e.preventDefault();
+            batchDropZone.classList.remove('drag-over');
+        });
+    });
+    batchDropZone.addEventListener('drop', (e) => {
+        const files = Array.from(e.dataTransfer.files);
+        setBatchFiles(files);
+    });
+
+    batchFileInput.addEventListener('change', () => {
+        setBatchFiles(Array.from(batchFileInput.files));
+    });
+
+    function setBatchFiles(files) {
+        batchFiles = files.filter(f => ['.jpg', '.jpeg', '.png', '.webp']
+            .some(ext => f.name.toLowerCase().endsWith(ext)));
+
+        if (!batchFiles.length) {
+            showToast('Nenhuma imagem válida selecionada', 'error');
+            return;
+        }
+
+        batchFileList.style.display = '';
+        batchFileList.innerHTML = batchFiles.map(f =>
+            `<div class="file-item">
+                <span class="file-name">🖼️ ${f.name}</span>
+                <span class="file-size">${formatSize(f.size)}</span>
+            </div>`
+        ).join('');
+
+        batchProcessBtn.disabled = false;
+        batchClearBtn.style.display = '';
+    }
+
+    batchClearBtn.addEventListener('click', () => {
+        batchFiles = [];
+        batchFileList.style.display = 'none';
+        batchFileList.innerHTML = '';
+        batchProcessBtn.disabled = true;
+        batchClearBtn.style.display = 'none';
+        batchFileInput.value = '';
+    });
+
+    batchProcessBtn.addEventListener('click', async () => {
+        if (!batchFiles.length) return;
+
+        const fd = new FormData();
+        batchFiles.forEach(f => fd.append('images', f));
+
+        batchProcessBtn.disabled = true;
+
+        try {
+            const resp = await fetch('/api/upload-images', { method: 'POST', body: fd });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error);
+
+            showToast(`Job iniciado: ${data.total} imagens`, 'info');
+            pollJob(data.job_id, 'batch');
+        } catch (e) {
+            showToast('Erro: ' + e.message, 'error');
+            batchProcessBtn.disabled = false;
+        }
+    });
+
+    // ═══════════════════════════════════════════════════════════════
+    // TAB 3 — Spreadsheet
+    // ═══════════════════════════════════════════════════════════════
+
+    const spreadsheetDropZone = document.getElementById('spreadsheet-drop-zone');
+    const spreadsheetFileInput = document.getElementById('spreadsheet-file-input');
+    const spreadsheetBrowseBtn = document.getElementById('spreadsheet-browse-btn');
+    const spreadsheetSelected = document.getElementById('spreadsheet-selected');
+    const spreadsheetFilename = document.getElementById('spreadsheet-filename');
+    const spreadsheetClearBtn = document.getElementById('spreadsheet-clear-btn');
+    const spreadsheetProcessBtn = document.getElementById('spreadsheet-process-btn');
+
+    let spreadsheetFile = null;
+
+    spreadsheetBrowseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        spreadsheetFileInput.click();
+    });
+    spreadsheetDropZone.addEventListener('click', () => spreadsheetFileInput.click());
+
+    ['dragenter', 'dragover'].forEach(evt => {
+        spreadsheetDropZone.addEventListener(evt, (e) => {
+            e.preventDefault();
+            spreadsheetDropZone.classList.add('drag-over');
+        });
+    });
+    ['dragleave', 'drop'].forEach(evt => {
+        spreadsheetDropZone.addEventListener(evt, (e) => {
+            e.preventDefault();
+            spreadsheetDropZone.classList.remove('drag-over');
+        });
+    });
+    spreadsheetDropZone.addEventListener('drop', (e) => {
+        const file = e.dataTransfer.files[0];
+        if (file) setSpreadsheetFile(file);
+    });
+
+    spreadsheetFileInput.addEventListener('change', () => {
+        if (spreadsheetFileInput.files[0]) setSpreadsheetFile(spreadsheetFileInput.files[0]);
+    });
+
+    function setSpreadsheetFile(file) {
+        const validExts = ['.xlsx', '.xls', '.csv'];
+        if (!validExts.some(ext => file.name.toLowerCase().endsWith(ext))) {
+            showToast('Formato não suportado. Use .xlsx, .xls ou .csv', 'error');
+            return;
+        }
+        spreadsheetFile = file;
+        spreadsheetFilename.textContent = file.name;
+        spreadsheetSelected.style.display = '';
+        spreadsheetProcessBtn.disabled = false;
+    }
+
+    spreadsheetClearBtn.addEventListener('click', () => {
+        spreadsheetFile = null;
+        spreadsheetSelected.style.display = 'none';
+        spreadsheetProcessBtn.disabled = true;
+        spreadsheetFileInput.value = '';
+    });
+
+    spreadsheetProcessBtn.addEventListener('click', async () => {
+        if (!spreadsheetFile) return;
+
+        const fd = new FormData();
+        fd.append('spreadsheet', spreadsheetFile);
+        fd.append('id_col', document.getElementById('id-col-input').value);
+        fd.append('workers', document.getElementById('workers-input').value);
+
+        spreadsheetProcessBtn.disabled = true;
+
+        try {
+            const resp = await fetch('/api/upload-spreadsheet', { method: 'POST', body: fd });
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error);
+
+            showToast(`Job iniciado: ${data.total} URLs`, 'info');
+            pollJob(data.job_id, 'spreadsheet');
+        } catch (e) {
+            showToast('Erro: ' + e.message, 'error');
+            spreadsheetProcessBtn.disabled = false;
+        }
+    });
+
+    // ═══════════════════════════════════════════════════════════════
+    // Job Polling
+    // ═══════════════════════════════════════════════════════════════
+
+    function pollJob(jobId, type) {
+        const progressContainer = document.getElementById(`${type}-progress`);
+        const progressBar = document.getElementById(`${type}-progress-bar`);
+        const progressText = document.getElementById(`${type}-progress-text`);
+        const progressStatus = document.getElementById(`${type}-progress-status`);
+
+        progressContainer.classList.add('active');
+
+        const interval = setInterval(async () => {
+            try {
+                const resp = await fetch(`/api/job/${jobId}`);
+                const job = await resp.json();
+
+                const pct = job.total > 0 ? Math.round((job.done / job.total) * 100) : 0;
+                progressBar.style.width = `${pct}%`;
+                progressText.textContent = `${job.done} / ${job.total}`;
+                progressStatus.textContent = job.errors.length
+                    ? `${job.errors.length} erro(s) encontrado(s)`
+                    : `Processando… ${pct}%`;
+
+                if (job.status === 'completed') {
+                    clearInterval(interval);
+                    progressStatus.textContent = `✅ Concluído! ${job.done} imagens processadas.`;
+                    if (job.errors.length) {
+                        progressStatus.textContent += ` ⚠️ ${job.errors.length} erro(s).`;
+                    }
+                    showToast('Processamento concluído!', 'success');
+                    loadStats();
+                }
+            } catch (e) {
+                clearInterval(interval);
+                progressStatus.textContent = '❌ Erro ao verificar status';
+            }
+        }, 1500);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // TAB 4 — Gallery
+    // ═══════════════════════════════════════════════════════════════
+
+    let galleryPage = 1;
+    let gallerySearch = '';
+    let searchDebounce;
+
+    document.getElementById('gallery-search').addEventListener('input', (e) => {
+        clearTimeout(searchDebounce);
+        searchDebounce = setTimeout(() => {
+            gallerySearch = e.target.value;
+            galleryPage = 1;
+            loadGallery();
+        }, 350);
+    });
+
+    document.getElementById('gallery-refresh-btn').addEventListener('click', () => loadGallery());
+
+    async function loadGallery() {
+        const grid = document.getElementById('gallery-grid');
+        const loading = document.getElementById('gallery-loading');
+        const empty = document.getElementById('gallery-empty');
+        const pagination = document.getElementById('gallery-pagination');
+
+        loading.style.display = '';
+        grid.innerHTML = '';
+        empty.style.display = 'none';
+
+        try {
+            const params = new URLSearchParams({
+                page: galleryPage,
+                per_page: 30,
+                search: gallerySearch,
+            });
+            const resp = await fetch(`/api/products?${params}`);
+            const data = await resp.json();
+
+            loading.style.display = 'none';
+
+            if (!data.products.length) {
+                empty.style.display = '';
+                pagination.innerHTML = '';
+                return;
+            }
+
+            grid.innerHTML = data.products.map(p => `
+                <div class="product-card" data-id="${p.id}" onclick="openProduct('${p.id}')">
+                    <img class="product-card-image"
+                         src="/api/image/${p.id}/${p.images[0]}"
+                         alt="Produto ${p.id}"
+                         loading="lazy">
+                    <div class="product-card-footer">
+                        <span class="product-card-id">#${p.id}</span>
+                        <span class="product-card-count">${p.count} img${p.count > 1 ? 's' : ''}</span>
+                    </div>
+                </div>
+            `).join('');
+
+            // Pagination
+            let pagHtml = '';
+            pagHtml += `<button ${galleryPage <= 1 ? 'disabled' : ''} onclick="galleryPage--; loadGallery()">← Anterior</button>`;
+            pagHtml += `<span class="page-info">Página ${data.page} de ${data.total_pages} (${data.total} produtos)</span>`;
+            pagHtml += `<button ${galleryPage >= data.total_pages ? 'disabled' : ''} onclick="galleryPage++; loadGallery()">Próxima →</button>`;
+            pagination.innerHTML = pagHtml;
+
+        } catch (e) {
+            loading.style.display = 'none';
+            showToast('Erro ao carregar galeria', 'error');
+        }
+    }
+
+    // ── Product Modal ───────────────────────────────────────────
+
+    const modal = document.getElementById('product-modal');
+    const modalTitle = document.getElementById('modal-title');
+    const modalImages = document.getElementById('modal-images');
+    const modalDownloadBtn = document.getElementById('modal-download-btn');
+
+    async function openProduct(productId) {
+        modalTitle.textContent = `Produto #${productId}`;
+        modalDownloadBtn.href = `/api/download/${productId}`;
+        modalImages.innerHTML = '<div class="loading-state"><div class="spinner"></div> Carregando…</div>';
+        modal.classList.add('active');
+
+        try {
+            const params = new URLSearchParams({ search: productId, per_page: 1 });
+            const resp = await fetch(`/api/products?${params}`);
+            const data = await resp.json();
+            const product = data.products.find(p => p.id === productId);
+
+            if (!product) {
+                modalImages.innerHTML = '<p>Produto não encontrado</p>';
+                return;
+            }
+
+            modalImages.innerHTML = product.images.map(img => `
+                <div class="modal-img-card">
+                    <img src="/api/image/${productId}/${img}" alt="${img}" loading="lazy">
+                    <div class="modal-img-label">${img}</div>
+                </div>
+            `).join('');
+
+        } catch (e) {
+            modalImages.innerHTML = '<p>Erro ao carregar imagens</p>';
+        }
+    }
+
+    document.getElementById('modal-close-btn').addEventListener('click', () => modal.classList.remove('active'));
+    document.getElementById('modal-close-footer').addEventListener('click', () => modal.classList.remove('active'));
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.classList.remove('active');
+    });
+
+    // Fechar modal com ESC
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.classList.contains('active')) {
+            modal.classList.remove('active');
+        }
+    });
+
+    </script>
+</body>
+</html>

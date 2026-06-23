@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+env/
+.env
+
+# Pastas de dados da aplicação
+uploads/
+saida/
+u2net_models/
+
+# Arquivos locais que não devem ir para o Github
+produtos.xlsx
+*.zip

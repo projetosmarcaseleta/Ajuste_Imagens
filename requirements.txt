@@ -1,0 +1,16 @@
+# Remoção de fundo via deep learning
+rembg[cpu]>=2.0.50
+
+# Manipulação de imagens
+Pillow>=10.0.0
+
+# Barra de progresso
+tqdm>=4.66.0
+
+# Leitura de planilhas (modo URL)
+pandas>=2.0.0
+openpyxl>=3.1.0
+
+# Servidor web
+Flask>=3.0.0
+gunicorn>=21.2.0

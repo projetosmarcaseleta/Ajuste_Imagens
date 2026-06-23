@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    container_name: app_processamento_imagens
+    ports:
+      - "3003:3003"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./saida:/app/saida
+      # Mantém cache do modelo de remoção de fundo (rembg)
+      - ./u2net_models:/root/.u2net
+    restart: unless-stopped
