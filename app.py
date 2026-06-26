@@ -271,12 +271,6 @@ def _process_one_foto_am(job_id, foto, index, total, opts):
             result["motivo_erro"] = str(err)
             emit_event(job_id, {"event": "log", "tp": "err", "msg": f"   ❌ {str(err)}"})
         
-    return result"log", "tp": "ok", "msg": f"   ✅ Concluída!"})
-        
-    except Exception as err:
-        result["motivo_erro"] = str(err)
-        emit_event(job_id, {"event": "log", "tp": "err", "msg": f"   ❌ {str(err)}"})
-        
     return result
 
 def _process_am_job_worker(job_id, oi, skus, token, delete_old):
