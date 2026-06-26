@@ -57,6 +57,21 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /opt/projeto_imagens
+            # Garante que a pasta u2net_models existe na VPS
+            mkdir -p u2net_models
+            # Pre-baixa os modelos de IA na VPS se não existirem
+            if [ ! -f u2net_models/u2net.onnx ]; then
+              echo "Baixando u2net.onnx..."
+              curl -L -s https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx -o u2net_models/u2net.onnx
+            fi
+            if [ ! -f u2net_models/isnet-general-use.onnx ]; then
+              echo "Baixando isnet-general-use.onnx..."
+              curl -L -s https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx -o u2net_models/isnet-general-use.onnx
+            fi
+            if [ ! -f u2net_models/birefnet-general.onnx ]; then
+              echo "Baixando birefnet-general.onnx..."
+              curl -L -s https://github.com/danielgatis/rembg/releases/download/v0.0.0/birefnet-general.onnx -o u2net_models/birefnet-general.onnx
+            fi
             # Para containers antigos se existirem
             docker-compose down --remove-orphans || true
             # Recria a imagem para atualizar com as mudanças de código e roda em background
