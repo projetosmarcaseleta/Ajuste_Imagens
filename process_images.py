@@ -53,23 +53,23 @@ logger = logging.getLogger(__name__)
 # Processamento de imagem
 # ---------------------------------------------------------------------------
 
-_sessions = {}
+_session = None
 
-def get_rembg_session(model_name: str):
-    if not model_name or model_name == "u2net":
-        return None
-    if model_name not in _sessions:
+def get_rembg_session():
+    global _session
+    if _session is None:
+        model_name = "isnet-general-use"
         logger.info("Carregando modelo rembg: %s...", model_name)
         try:
-            _sessions[model_name] = new_session(model_name)
+            _session = new_session(model_name)
         except Exception as exc:
             logger.error("Erro ao carregar modelo %s: %s. Usando padrao.", model_name, exc)
-            return None
-    return _sessions[model_name]
+            _session = None
+    return _session
 
-def compose_on_white(image_bytes: bytes, model_name: str = "u2net") -> Image.Image:
+def compose_on_white(image_bytes: bytes) -> Image.Image:
     """Remove o fundo e compõe sobre canvas branco. Retorna imagem RGB."""
-    session = get_rembg_session(model_name)
+    session = get_rembg_session()
     output_bytes = remove(image_bytes, session=session)
     foreground = Image.open(io.BytesIO(output_bytes)).convert("RGBA")
     white_bg = Image.new("RGBA", foreground.size, (255, 255, 255, 255))
@@ -90,11 +90,11 @@ def save_image(img: Image.Image, output_path: Path) -> None:
 # Modo 1 — pasta local
 # ---------------------------------------------------------------------------
 
-def process_from_file(input_path: Path, output_path: Path, model_name: str = "u2net") -> tuple[str, bool, str]:
+def process_from_file(input_path: Path, output_path: Path) -> tuple[str, bool, str]:
     try:
         with open(input_path, "rb") as f:
             data = f.read()
-        result = compose_on_white(data, model_name)
+        result = compose_on_white(data)
         save_image(result, output_path)
         return input_path.name, True, ""
     except Exception as exc:
@@ -120,14 +120,14 @@ def filename_from_url(url: str) -> str:
     return name
 
 
-def process_from_url(url: str, output_path: Path, model_name: str = "u2net") -> tuple[str, bool, str]:
+def process_from_url(url: str, output_path: Path) -> tuple[str, bool, str]:
     label = output_path.name
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
         req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = resp.read()
-        result = compose_on_white(data, model_name)
+        result = compose_on_white(data)
         save_image(result, output_path)
         return label, True, ""
     except Exception as exc:

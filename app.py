@@ -158,7 +158,6 @@ def _process_one_foto_am(job_id, foto, index, total, opts):
     
     token = opts["token"]
     delete_old = opts["deleteOld"]
-    model_name = opts.get("modelName", "u2net")
     
     try:
         if is_job_cancelled(job_id):
@@ -176,7 +175,7 @@ def _process_one_foto_am(job_id, foto, index, total, opts):
         if is_job_cancelled(job_id):
             raise Exception("Cancelado pelo usuário")
             
-        result_img = compose_on_white(img_data, model_name)
+        result_img = compose_on_white(img_data)
         
         filename = f"bgrem_{int(time.time())}_{uuid.uuid4().hex[:6]}.jpg"
         filepath = TEMP_DIR / filename
@@ -274,7 +273,7 @@ def _process_one_foto_am(job_id, foto, index, total, opts):
         
     return result
 
-def _process_am_job_worker(job_id, oi, skus, token, delete_old, model_name="u2net"):
+def _process_am_job_worker(job_id, oi, skus, token, delete_old):
     try:
         if is_job_cancelled(job_id):
             emit_event(job_id, {"event": "error", "msg": "Cancelado pelo usuário"})
@@ -307,7 +306,7 @@ def _process_am_job_worker(job_id, oi, skus, token, delete_old, model_name="u2ne
         results = []
         done_count = 0
         
-        opts = {"token": token, "deleteOld": delete_old, "modelName": model_name}
+        opts = {"token": token, "deleteOld": delete_old}
         
         with ThreadPoolExecutor(max_workers=CONCURRENCY) as executor:
             futures = {
@@ -362,7 +361,6 @@ def api_processar():
         oi = str(body.get("oi", "")).strip()
         token = str(body.get("token", "")).strip()
         delete_old = body.get("deleteOld", True)
-        model_name = str(body.get("modelName", "u2net")).strip()
         
         skus_raw = body.get("skus", [])
         if isinstance(skus_raw, str):
@@ -382,7 +380,7 @@ def api_processar():
             
         thread = threading.Thread(
             target=_process_am_job_worker,
-            args=(job_id, oi, skus, token, delete_old, model_name),
+            args=(job_id, oi, skus, token, delete_old),
             daemon=True
         )
         thread.start()
@@ -433,7 +431,6 @@ def serve_temp(filename):
 def upload_images():
     """Recebe imagens via upload e processa em background."""
     files = request.files.getlist("images")
-    model_name = request.form.get("modelName", "u2net")
     if not files:
         return jsonify({"error": "Nenhuma imagem enviada"}), 400
 
@@ -465,7 +462,7 @@ def upload_images():
 
     thread = threading.Thread(
         target=_process_images_job,
-        args=(job_id, saved, model_name),
+        args=(job_id, saved),
         daemon=True,
     )
     thread.start()
@@ -473,13 +470,13 @@ def upload_images():
     return jsonify({"job_id": job_id, "total": len(saved)})
 
 
-def _process_images_job(job_id: str, images: list[Path], model_name: str = "u2net"):
+def _process_images_job(job_id: str, images: list[Path]):
     job_output = OUTPUT_DIR / f"upload_{job_id}"
     job_output.mkdir(parents=True, exist_ok=True)
-
+ 
     for img_path in images:
         out_path = job_output / img_path.name
-        name, ok, err = process_from_file(img_path, out_path, model_name)
+        name, ok, err = process_from_file(img_path, out_path)
         with jobs_lock:
             jobs[job_id]["done"] += 1
             if not ok:
@@ -504,13 +501,12 @@ def _process_images_job(job_id: str, images: list[Path], model_name: str = "u2ne
 def preview_image():
     """Processa uma única imagem e retorna o resultado inline."""
     file = request.files.get("image")
-    model_name = request.form.get("modelName", "u2net")
     if not file:
         return jsonify({"error": "Nenhuma imagem enviada"}), 400
 
     try:
         data = file.read()
-        result = compose_on_white(data, model_name)
+        result = compose_on_white(data)
 
         buf = io.BytesIO()
         result.save(buf, format="JPEG", quality=95)

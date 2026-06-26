@@ -60,15 +60,7 @@
                 <p>Faça upload de uma imagem e veja o resultado com fundo branco instantaneamente.</p>
             </div>
 
-            <!-- Seleção de Modelo -->
-            <div class="form-group" style="max-width: 380px; margin-bottom: 20px;">
-                <label class="form-label">🤖 Modelo de IA</label>
-                <select class="form-input" id="preview-model-select" style="background-color: var(--bg-card); cursor: pointer;">
-                    <option value="u2net" selected>U2Net (Generalista / Padrão)</option>
-                    <option value="isnet-general-use">ISNet (Melhor para detalhes / Pendrives / Objetos Claros)</option>
-                    <option value="birefnet-general">BiRefNet (Ultra Precisão - Recomendado para produtos)</option>
-                </select>
-            </div>
+
 
             <div class="upload-zone" id="preview-drop-zone">
                 <div class="upload-zone-content">
@@ -116,15 +108,7 @@
                 <p>Envie várias imagens de uma vez para processamento em background.</p>
             </div>
 
-            <!-- Seleção de Modelo -->
-            <div class="form-group" style="max-width: 380px; margin-bottom: 20px;">
-                <label class="form-label">🤖 Modelo de IA</label>
-                <select class="form-input" id="batch-model-select" style="background-color: var(--bg-card); cursor: pointer;">
-                    <option value="u2net" selected>U2Net (Generalista / Padrão)</option>
-                    <option value="isnet-general-use">ISNet (Melhor para detalhes / Pendrives / Objetos Claros)</option>
-                    <option value="birefnet-general">BiRefNet (Ultra Precisão - Recomendado para produtos)</option>
-                </select>
-            </div>
+
 
             <div class="upload-zone" id="batch-drop-zone">
                 <div class="upload-zone-content">
@@ -186,15 +170,7 @@
                     <label class="form-label">Token do AnyMarket (gumgaToken)</label>
                     <input type="password" class="form-input" id="am-token-input" placeholder="Token da API do AnyMarket">
                 </div>
-                <!-- Seleção de Modelo -->
-                <div class="form-group" style="grid-column: span 2;">
-                    <label class="form-label">🤖 Modelo de IA</label>
-                    <select class="form-input" id="am-model-select" style="background-color: var(--bg-card); cursor: pointer;">
-                        <option value="u2net" selected>U2Net (Generalista / Padrão)</option>
-                        <option value="isnet-general-use">ISNet (Melhor para detalhes / Pendrives / Objetos Claros)</option>
-                        <option value="birefnet-general">BiRefNet (Ultra Precisão - Recomendado para produtos)</option>
-                    </select>
-                </div>
+
             </div>
             
             <div class="mt-24" style="margin-bottom: 12px;">
@@ -343,7 +319,6 @@
         try {
             const fd = new FormData();
             fd.append('image', file);
-            fd.append('modelName', document.getElementById('preview-model-select').value);
             const resp = await fetch('/api/preview', { method: 'POST', body: fd });
             if (!resp.ok) {
                 const err = await resp.json();
@@ -435,7 +410,6 @@
 
         const fd = new FormData();
         batchFiles.forEach(f => fd.append('images', f));
-        fd.append('modelName', document.getElementById('batch-model-select').value);
 
         batchProcessBtn.disabled = true;
 
@@ -551,7 +525,6 @@
         const skus = document.getElementById('am-skus-input').value;
         const token = document.getElementById('am-token-input').value.trim();
         const deleteOld = amDeleteOld.checked;
-        const modelName = document.getElementById('am-model-select').value;
 
         if (!oi || !token) {
             showToast('OI e Token são obrigatórios', 'error');
@@ -568,7 +541,7 @@
         localStorage.setItem('am_oi', oi);
         localStorage.setItem('am_token', token);
 
-        const payload = { oi, skus, token, deleteOld, modelName };
+        const payload = { oi, skus, token, deleteOld };
         
         amProcessBtn.disabled = true;
         amLog.innerHTML = '';

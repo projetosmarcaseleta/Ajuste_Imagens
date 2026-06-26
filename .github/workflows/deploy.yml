@@ -68,10 +68,6 @@ jobs:
               echo "Baixando isnet-general-use.onnx..."
               curl -L -s https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx -o u2net_models/isnet-general-use.onnx
             fi
-            if [ ! -f u2net_models/birefnet-general.onnx ]; then
-              echo "Baixando birefnet-general.onnx..."
-              curl -L -s https://github.com/danielgatis/rembg/releases/download/v0.0.0/BiRefNet-general-epoch_244.onnx -o u2net_models/birefnet-general.onnx
-            fi
             # Para containers antigos se existirem
             docker-compose down --remove-orphans || true
             # Recria a imagem para atualizar com as mudanças de código e roda em background
