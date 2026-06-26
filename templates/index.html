@@ -466,20 +466,38 @@
     
     const amProcessBtn = document.getElementById('am-process-btn');
     const amLog = document.getElementById('am-log');
+    const amDeleteOld = document.getElementById('am-delete-old');
     let amEventSource = null;
 
     if (localStorage.getItem('am_oi')) document.getElementById('am-oi-input').value = localStorage.getItem('am_oi');
     if (localStorage.getItem('am_token')) document.getElementById('am-token-input').value = localStorage.getItem('am_token');
     
+    // Confirmação ao ativar a opção de apagar as imagens originais
+    amDeleteOld.addEventListener('change', () => {
+        if (amDeleteOld.checked) {
+            const confirmChange = confirm("Tem certeza que deseja ativar a opção de remover as imagens originais do AnyMarket após o processamento? Esta ação é irreversível.");
+            if (!confirmChange) {
+                amDeleteOld.checked = false;
+            }
+        }
+    });
+
     amProcessBtn.addEventListener('click', async () => {
         const oi = document.getElementById('am-oi-input').value.trim();
         const skus = document.getElementById('am-skus-input').value;
         const token = document.getElementById('am-token-input').value.trim();
-        const deleteOld = document.getElementById('am-delete-old').checked;
+        const deleteOld = amDeleteOld.checked;
 
         if (!oi || !token) {
             showToast('OI e Token são obrigatórios', 'error');
             return;
+        }
+
+        if (deleteOld) {
+            const confirmProcess = confirm("A opção de remover as imagens originais está ativada. Deseja prosseguir com o processamento e a exclusão das imagens?");
+            if (!confirmProcess) {
+                return;
+            }
         }
 
         localStorage.setItem('am_oi', oi);
