@@ -58,7 +58,7 @@ _session = None
 def get_rembg_session():
     global _session
     if _session is None:
-        model_name = "isnet-general-use"
+        model_name = "birefnet-general-lite"
         logger.info("Carregando modelo rembg: %s...", model_name)
         try:
             _session = new_session(model_name)
