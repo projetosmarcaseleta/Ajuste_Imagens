@@ -70,7 +70,7 @@ jobs:
             fi
             if [ ! -f u2net_models/birefnet-general.onnx ]; then
               echo "Baixando birefnet-general.onnx..."
-              curl -L -s https://github.com/danielgatis/rembg/releases/download/v0.0.0/birefnet-general.onnx -o u2net_models/birefnet-general.onnx
+              curl -L -s https://github.com/danielgatis/rembg/releases/download/v0.0.0/BiRefNet-general-epoch_244.onnx -o u2net_models/birefnet-general.onnx
             fi
             # Para containers antigos se existirem
             docker-compose down --remove-orphans || true
