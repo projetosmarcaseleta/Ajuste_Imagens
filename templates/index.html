@@ -191,6 +191,12 @@
                 </div>
                 <div class="progress-status" id="am-progress-status">Iniciando…</div>
                 
+                <div class="mt-12" style="display: flex; justify-content: flex-end; margin-top: 12px;">
+                    <button class="btn btn-danger btn-sm" id="am-cancel-btn" style="display: none;">
+                        🛑 Cancelar Operação
+                    </button>
+                </div>
+                
                 <div class="log-wrap" id="am-log" style="max-height: 250px; overflow-y: auto; background: var(--surface); padding: 12px; border-radius: 8px; margin-top: 16px; font-family: monospace; font-size: 12px;">
                 </div>
             </div>
@@ -467,7 +473,34 @@
     const amProcessBtn = document.getElementById('am-process-btn');
     const amLog = document.getElementById('am-log');
     const amDeleteOld = document.getElementById('am-delete-old');
+    const amCancelBtn = document.getElementById('am-cancel-btn');
     let amEventSource = null;
+    let currentAMJobId = null;
+
+    amCancelBtn.addEventListener('click', async () => {
+        if (!currentAMJobId) return;
+        const confirmCancel = confirm("Tem certeza que deseja cancelar a operação e interromper todo o processamento no AnyMarket?");
+        if (!confirmCancel) return;
+        
+        amCancelBtn.disabled = true;
+        amCancelBtn.innerHTML = '⏳ Cancelando...';
+        
+        try {
+            const resp = await fetch(`/api/cancelar/${currentAMJobId}`, { method: 'POST' });
+            const data = await resp.json();
+            if (resp.ok) {
+                showToast('Solicitação de cancelamento enviada!', 'info');
+            } else {
+                showToast('Erro ao cancelar: ' + data.error, 'error');
+                amCancelBtn.disabled = false;
+                amCancelBtn.innerHTML = '🛑 Cancelar Operação';
+            }
+        } catch (e) {
+            showToast('Erro de rede ao cancelar', 'error');
+            amCancelBtn.disabled = false;
+            amCancelBtn.innerHTML = '🛑 Cancelar Operação';
+        }
+    });
 
     if (localStorage.getItem('am_oi')) document.getElementById('am-oi-input').value = localStorage.getItem('am_oi');
     if (localStorage.getItem('am_token')) document.getElementById('am-token-input').value = localStorage.getItem('am_token');
@@ -527,10 +560,15 @@
             if (!resp.ok) throw new Error(data.error);
             
             showToast('Processamento no AnyMarket iniciado!', 'info');
+            currentAMJobId = data.jobId;
+            amCancelBtn.innerHTML = '🛑 Cancelar Operação';
+            amCancelBtn.style.display = 'inline-flex';
+            amCancelBtn.disabled = false;
             startAMProgress(data.jobId);
         } catch (e) {
             showToast('Erro: ' + e.message, 'error');
             amProcessBtn.disabled = false;
+            amCancelBtn.style.display = 'none';
         }
     });
 
@@ -576,6 +614,7 @@
                     document.getElementById('am-progress-bar').style.width = '100%';
                     amEventSource.close();
                     amProcessBtn.disabled = false;
+                    amCancelBtn.style.display = 'none';
                     showToast('Processamento AnyMarket finalizado!', 'success');
                 } else if (data.event === 'error') {
                     addAMLog(`Erro: ${data.msg}`, 'err');
@@ -585,6 +624,7 @@
                     if (amHeaderErr) amHeaderErr.innerHTML = '❌ Erro!';
                     amEventSource.close();
                     amProcessBtn.disabled = false;
+                    amCancelBtn.style.display = 'none';
                 }
             } catch (err) {
                 console.error("Erro no SSE:", err);
@@ -594,6 +634,7 @@
         amEventSource.onerror = () => {
             amEventSource.close();
             amProcessBtn.disabled = false;
+            amCancelBtn.style.display = 'none';
         };
     }
 

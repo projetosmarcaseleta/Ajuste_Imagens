@@ -441,6 +441,18 @@ body::after {
     border-color: var(--border-hover);
 }
 
+.btn-danger {
+    background: rgba(239, 68, 68, 0.15);
+    color: #fca5a5;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.btn-danger:hover {
+    background: rgba(239, 68, 68, 0.3);
+    border-color: rgba(239, 68, 68, 0.7);
+    box-shadow: 0 0 16px rgba(239, 68, 68, 0.25);
+}
+
 .btn-sm {
     padding: 6px 14px;
     font-size: 12px;

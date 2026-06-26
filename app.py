@@ -60,6 +60,18 @@ CONCURRENCY = 5
 job_events: dict[str, Queue] = {}
 job_events_lock = threading.Lock()
 
+# Controle de cancelamento de jobs
+cancelled_jobs = set()
+cancelled_jobs_lock = threading.Lock()
+
+def is_job_cancelled(job_id):
+    with cancelled_jobs_lock:
+        return job_id in cancelled_jobs
+
+def cancel_job(job_id):
+    with cancelled_jobs_lock:
+        cancelled_jobs.add(job_id)
+
 class RateLimiter:
     def __init__(self, delay=0.110):
         self.delay = delay
@@ -137,7 +149,7 @@ def _process_one_foto_am(job_id, foto, index, total, opts):
     if variacao:
         label += f" — Var: {variacao}"
         
-    emit_event(job_id, {"event": "log", "tp": "info", "msg": f"⏳ {label}"})
+    emit_event(job_id, {"event": "log", "tp": "info", "msg": f"   ⏳ {label}"})
     
     result = {
         "sku": foto.get("sku"), "id_produto": foto.get("id_produto"), "id_foto": foto.get("id_foto"),
@@ -148,6 +160,9 @@ def _process_one_foto_am(job_id, foto, index, total, opts):
     delete_old = opts["deleteOld"]
     
     try:
+        if is_job_cancelled(job_id):
+            raise Exception("Cancelado pelo usuário")
+            
         if not src_url:
             raise Exception("URL da imagem ausente")
             
@@ -156,6 +171,9 @@ def _process_one_foto_am(job_id, foto, index, total, opts):
         status, img_data = _download_image(src_url)
         if status != 200 or not img_data:
             raise Exception(f"Download falhou: HTTP {status}")
+            
+        if is_job_cancelled(job_id):
+            raise Exception("Cancelado pelo usuário")
             
         result_img = compose_on_white(img_data)
         
@@ -178,6 +196,9 @@ def _process_one_foto_am(job_id, foto, index, total, opts):
         
         new_url = f"{SELF_BASE}/temp/{filename}"
         
+        if is_job_cancelled(job_id):
+            raise Exception("Cancelado pelo usuário")
+            
         emit_event(job_id, {"event": "log", "tp": "info", "msg": f"   📤 Enviando nova foto ao AnyMarket... (URL: {new_url})"})
         
         post_body = {"url": new_url, "index": idx, "main": False}
@@ -188,6 +209,8 @@ def _process_one_foto_am(job_id, foto, index, total, opts):
         post_r_status = 500
         post_r_body = {}
         for attempt in range(1, 4):
+            if is_job_cancelled(job_id):
+                raise Exception("Cancelado pelo usuário")
             post_r_status, post_r_body = _am_request("POST", f"/v2/products/{foto['id_produto']}/images", post_body, token)
             if post_r_status < 400 and post_r_body.get("id"):
                 break
@@ -202,6 +225,9 @@ def _process_one_foto_am(job_id, foto, index, total, opts):
         new_photo_id = post_r_body["id"]
         result["nova_url"] = new_url
         
+        if is_job_cancelled(job_id):
+            raise Exception("Cancelado pelo usuário")
+            
         emit_event(job_id, {"event": "log", "tp": "info", "msg": f"   🔢 Ajustando índice ({idx}) e main ({is_main})..."})
         try:
             put_body = {"id": int(new_photo_id), "index": idx, "main": is_main}
@@ -219,6 +245,8 @@ def _process_one_foto_am(job_id, foto, index, total, opts):
             emit_event(job_id, {"event": "log", "tp": "skip", "msg": f"   ⚠️ PUT ignorado: {str(put_err)}"})
             
         if delete_old:
+            if is_job_cancelled(job_id):
+                raise Exception("Cancelado pelo usuário")
             emit_event(job_id, {"event": "log", "tp": "info", "msg": f"   🗑️  Removendo foto antiga..."})
             try:
                 del_r_status, del_r_body = _am_request("DELETE", f"/v2/products/{foto['id_produto']}/images/{foto['id_foto']}", None, token)
@@ -235,6 +263,17 @@ def _process_one_foto_am(job_id, foto, index, total, opts):
         emit_event(job_id, {"event": "log", "tp": "ok", "msg": f"   ✅ Concluída!"})
         
     except Exception as err:
+        if str(err) == "Cancelado pelo usuário":
+            result["status"] = "CANCELADO"
+            result["motivo_erro"] = str(err)
+            emit_event(job_id, {"event": "log", "tp": "err", "msg": f"   🛑 Cancelado!"})
+        else:
+            result["motivo_erro"] = str(err)
+            emit_event(job_id, {"event": "log", "tp": "err", "msg": f"   ❌ {str(err)}"})
+        
+    return result"log", "tp": "ok", "msg": f"   ✅ Concluída!"})
+        
+    except Exception as err:
         result["motivo_erro"] = str(err)
         emit_event(job_id, {"event": "log", "tp": "err", "msg": f"   ❌ {str(err)}"})
         
@@ -242,9 +281,17 @@ def _process_one_foto_am(job_id, foto, index, total, opts):
 
 def _process_am_job_worker(job_id, oi, skus, token, delete_old):
     try:
+        if is_job_cancelled(job_id):
+            emit_event(job_id, {"event": "error", "msg": "Cancelado pelo usuário"})
+            return
+            
         emit_event(job_id, {"event": "log", "tp": "info", "msg": "🔍 Consultando banco de dados via n8n..."})
         status, body = _json_request("POST", N8N_HOST, N8N_PATH, {"oi": oi, "skus": skus}, {}, N8N_PORT)
         
+        if is_job_cancelled(job_id):
+            emit_event(job_id, {"event": "error", "msg": "Cancelado pelo usuário"})
+            return
+            
         if status != 200 or not body.get("ok"):
             emit_event(job_id, {"event": "error", "msg": f"Falha n8n ({status}): {str(body)[:200]}"})
             return
@@ -253,6 +300,10 @@ def _process_am_job_worker(job_id, oi, skus, token, delete_old):
         if not fotos:
             emit_event(job_id, {"event": "log", "tp": "skip", "msg": "⚠️ Nenhuma imagem encontrada."})
             emit_event(job_id, {"event": "complete", "total": 0, "ok": 0, "erros": 0, "results": []})
+            return
+            
+        if is_job_cancelled(job_id):
+            emit_event(job_id, {"event": "error", "msg": "Cancelado pelo usuário"})
             return
             
         emit_event(job_id, {"event": "log", "tp": "info", "msg": f"📸 {len(fotos)} foto(s) encontrada(s). Processando com {CONCURRENCY} workers..."})
@@ -270,6 +321,10 @@ def _process_am_job_worker(job_id, oi, skus, token, delete_old):
             }
             
             for future in as_completed(futures):
+                if is_job_cancelled(job_id):
+                    for fut in futures:
+                        fut.cancel()
+                    break
                 res = future.result()
                 results.append(res)
                 done_count += 1
@@ -278,6 +333,11 @@ def _process_am_job_worker(job_id, oi, skus, token, delete_old):
                 err_n = len(results) - ok_n
                 emit_event(job_id, {"event": "progress", "total": len(fotos), "done": done_count, "ok": ok_n, "erros": err_n})
                 
+        if is_job_cancelled(job_id):
+            emit_event(job_id, {"event": "log", "tp": "err", "msg": "🛑 Processamento cancelado pelo usuário!"})
+            emit_event(job_id, {"event": "error", "msg": "Cancelado pelo usuário"})
+            return
+
         ok_total = sum(1 for r in results if r["status"] == "SUCESSO")
         err_total = len(results) - ok_total
         emit_event(job_id, {"event": "complete", "total": len(results), "ok": ok_total, "erros": err_total, "results": results})
@@ -334,6 +394,12 @@ def api_processar():
         return jsonify({"ok": True, "jobId": job_id})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 400
+
+@app.route("/api/cancelar/<job_id>", methods=["POST"])
+def api_cancelar(job_id):
+    cancel_job(job_id)
+    emit_event(job_id, {"event": "log", "tp": "err", "msg": "🛑 Cancelamento solicitado pelo usuário..."})
+    return jsonify({"ok": True, "message": "Cancelamento solicitado"})
 
 @app.route("/api/progress/<job_id>")
 def api_progress(job_id):
