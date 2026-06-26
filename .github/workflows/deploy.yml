@@ -1,4 +1,4 @@
-name: Deploy to VPS
+ name: Deploy to VPS
 
 on:
   push:
@@ -26,7 +26,29 @@ jobs:
           target: "/opt/projeto_imagens" # Pasta destino na VPS
           rm: false # Não remove arquivos antes de copiar, para manter uploads e db se existirem
           
-      # 3. Executa o docker-compose para recriar e rodar o app atualizado
+      # 3. Garante que o Docker Compose V2 está instalado na VPS
+      - name: Ensure Docker Compose V2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            # Verifica se já tem compose v2 (plugin ou standalone)
+            if docker compose version > /dev/null 2>&1; then
+              echo "Docker Compose V2 (plugin) já instalado"
+              docker compose version
+            elif docker-compose version 2>&1 | grep -q "v2"; then
+              echo "Docker Compose V2 (standalone) já instalado"
+              docker-compose version
+            else
+              echo "Instalando Docker Compose V2 standalone..."
+              sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /usr/local/bin/docker-compose
+              sudo chmod +x /usr/local/bin/docker-compose
+              docker-compose version
+            fi
+
+      # 4. Executa o docker-compose para recriar e rodar o app atualizado
       - name: Deploy with Docker Compose
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -35,5 +57,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd /opt/projeto_imagens
+            # Para containers antigos se existirem
+            docker-compose down --remove-orphans || true
             # Recria a imagem para atualizar com as mudanças de código e roda em background
             docker-compose up -d --build

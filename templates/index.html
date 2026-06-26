@@ -512,6 +512,9 @@
         document.getElementById('am-progress-bar').style.width = '0%';
         document.getElementById('am-progress-text').textContent = '0 / 0';
         document.getElementById('am-progress-status').textContent = 'Iniciando...';
+        // Restaura header com spinner
+        const amHeaderReset = document.querySelector('#am-progress .progress-header h4');
+        if (amHeaderReset) amHeaderReset.innerHTML = '<div class="spinner"></div> Sincronizando…';
         
         try {
             const resp = await fetch('/api/processar', {
@@ -567,12 +570,19 @@
                     document.getElementById('am-progress-status').textContent = `Processando... ${pct}% (OK: ${data.ok}, Erros: ${data.erros})`;
                 } else if (data.event === 'complete') {
                     document.getElementById('am-progress-status').textContent = `✅ Concluído! (Total: ${data.total}, OK: ${data.ok}, Erros: ${data.erros})`;
+                    // Atualiza o header: remove spinner e troca texto
+                    const amHeader = document.querySelector('#am-progress .progress-header h4');
+                    if (amHeader) amHeader.innerHTML = '✅ Concluído!';
+                    document.getElementById('am-progress-bar').style.width = '100%';
                     amEventSource.close();
                     amProcessBtn.disabled = false;
                     showToast('Processamento AnyMarket finalizado!', 'success');
                 } else if (data.event === 'error') {
                     addAMLog(`Erro: ${data.msg}`, 'err');
                     document.getElementById('am-progress-status').textContent = `❌ Erro: ${data.msg}`;
+                    // Atualiza o header: remove spinner e mostra erro
+                    const amHeaderErr = document.querySelector('#am-progress .progress-header h4');
+                    if (amHeaderErr) amHeaderErr.innerHTML = '❌ Erro!';
                     amEventSource.close();
                     amProcessBtn.disabled = false;
                 }
