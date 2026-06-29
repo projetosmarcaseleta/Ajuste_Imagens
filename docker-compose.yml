@@ -11,4 +11,10 @@ services:
       - ./saida:/app/saida
       # Mantém cache do modelo de remoção de fundo (rembg)
       - ./u2net_models:/root/.u2net
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 512M
     restart: unless-stopped

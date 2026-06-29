@@ -60,7 +60,25 @@
                 <p>Faça upload de uma imagem e veja o resultado com fundo branco instantaneamente.</p>
             </div>
 
-
+            <div class="model-selector" id="preview-model-selector">
+                <label class="model-selector-label">🤖 Modelo de IA:</label>
+                <div class="model-options">
+                    <label class="model-option">
+                        <input type="radio" name="preview-model" value="padrao" checked>
+                        <div class="model-option-content">
+                            <span class="model-option-name">⚡ Padrão (rápido)</span>
+                            <span class="model-option-desc">U²-Net — rápido, boa qualidade geral</span>
+                        </div>
+                    </label>
+                    <label class="model-option">
+                        <input type="radio" name="preview-model" value="preciso">
+                        <div class="model-option-content">
+                            <span class="model-option-name">🎯 Preciso (detalhado)</span>
+                            <span class="model-option-desc">BiRefNet — mais lento, melhor precisão</span>
+                        </div>
+                    </label>
+                </div>
+            </div>
 
             <div class="upload-zone" id="preview-drop-zone">
                 <div class="upload-zone-content">
@@ -108,7 +126,25 @@
                 <p>Envie várias imagens de uma vez para processamento em background.</p>
             </div>
 
-
+            <div class="model-selector" id="batch-model-selector">
+                <label class="model-selector-label">🤖 Modelo de IA:</label>
+                <div class="model-options">
+                    <label class="model-option">
+                        <input type="radio" name="batch-model" value="padrao" checked>
+                        <div class="model-option-content">
+                            <span class="model-option-name">⚡ Padrão (rápido)</span>
+                            <span class="model-option-desc">U²-Net — rápido, boa qualidade geral</span>
+                        </div>
+                    </label>
+                    <label class="model-option">
+                        <input type="radio" name="batch-model" value="preciso">
+                        <div class="model-option-content">
+                            <span class="model-option-name">🎯 Preciso (detalhado)</span>
+                            <span class="model-option-desc">BiRefNet — mais lento, melhor precisão</span>
+                        </div>
+                    </label>
+                </div>
+            </div>
 
             <div class="upload-zone" id="batch-drop-zone">
                 <div class="upload-zone-content">
@@ -171,6 +207,26 @@
                     <input type="password" class="form-input" id="am-token-input" placeholder="Token da API do AnyMarket">
                 </div>
 
+            </div>
+
+            <div class="model-selector" id="am-model-selector">
+                <label class="model-selector-label">🤖 Modelo de IA:</label>
+                <div class="model-options">
+                    <label class="model-option">
+                        <input type="radio" name="am-model" value="padrao" checked>
+                        <div class="model-option-content">
+                            <span class="model-option-name">⚡ Padrão (rápido)</span>
+                            <span class="model-option-desc">U²-Net — rápido, boa qualidade geral</span>
+                        </div>
+                    </label>
+                    <label class="model-option">
+                        <input type="radio" name="am-model" value="preciso">
+                        <div class="model-option-content">
+                            <span class="model-option-name">🎯 Preciso (detalhado)</span>
+                            <span class="model-option-desc">BiRefNet — mais lento, melhor precisão</span>
+                        </div>
+                    </label>
+                </div>
             </div>
             
             <div class="mt-24" style="margin-bottom: 12px;">
@@ -307,6 +363,11 @@
         if (previewFileInput.files[0]) processPreview(previewFileInput.files[0]);
     });
 
+    function getSelectedModel(name) {
+        const radio = document.querySelector(`input[name="${name}"]:checked`);
+        return radio ? radio.value : 'padrao';
+    }
+
     async function processPreview(file) {
         // Show original
         previewPanel.style.display = '';
@@ -319,6 +380,7 @@
         try {
             const fd = new FormData();
             fd.append('image', file);
+            fd.append('model', getSelectedModel('preview-model'));
             const resp = await fetch('/api/preview', { method: 'POST', body: fd });
             if (!resp.ok) {
                 const err = await resp.json();
@@ -541,7 +603,8 @@
         localStorage.setItem('am_oi', oi);
         localStorage.setItem('am_token', token);
 
-        const payload = { oi, skus, token, deleteOld };
+        const model = getSelectedModel('am-model');
+        const payload = { oi, skus, token, deleteOld, model };
         
         amProcessBtn.disabled = true;
         amLog.innerHTML = '';

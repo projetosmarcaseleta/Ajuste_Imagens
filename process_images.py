@@ -19,8 +19,10 @@ Uso — planilha:
 
 import argparse
 import io
+import gc
 import logging
 import sys
+import threading
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -50,26 +52,54 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Processamento de imagem
+# Processamento de imagem — suporte a múltiplos modelos
 # ---------------------------------------------------------------------------
 
-_session = None
+# Modelos disponíveis (chave interna → nome rembg)
+AVAILABLE_MODELS = {
+    "padrao":  "u2net",                # ~170MB, rápido, boa qualidade geral
+    "preciso": "birefnet-general-lite", # ~1GB+, mais lento, melhor precisão em produtos complexos
+}
+DEFAULT_MODEL = "padrao"
 
-def get_rembg_session():
-    global _session
-    if _session is None:
-        model_name = "birefnet-general-lite"
-        logger.info("Carregando modelo rembg: %s...", model_name)
-        try:
-            _session = new_session(model_name)
-        except Exception as exc:
-            logger.error("Erro ao carregar modelo %s: %s. Usando padrao.", model_name, exc)
-            _session = None
-    return _session
+_sessions: dict[str, object] = {}
+_sessions_lock = threading.Lock()
 
-def compose_on_white(image_bytes: bytes) -> Image.Image:
+
+def get_rembg_session(model_key: str | None = None):
+    """Retorna a sessão rembg para o modelo solicitado (com cache thread-safe)."""
+    if model_key is None:
+        model_key = DEFAULT_MODEL
+    model_key = model_key if model_key in AVAILABLE_MODELS else DEFAULT_MODEL
+    model_name = AVAILABLE_MODELS[model_key]
+
+    # Fast path sem lock
+    if model_key in _sessions:
+        return _sessions[model_key]
+
+    with _sessions_lock:
+        # Double-check após adquirir o lock
+        if model_key not in _sessions:
+            logger.info("Carregando modelo rembg: %s (%s)...", model_key, model_name)
+            try:
+                _sessions[model_key] = new_session(model_name)
+                gc.collect()
+                logger.info("Modelo '%s' carregado com sucesso.", model_key)
+            except Exception as exc:
+                logger.error("Erro ao carregar modelo %s: %s", model_name, exc)
+                return None
+    return _sessions[model_key]
+
+
+def preload_model():
+    """Pré-carrega o modelo padrão na inicialização (antes de aceitar requisições)."""
+    logger.info("Pré-carregando modelo rembg padrão (%s)...", DEFAULT_MODEL)
+    get_rembg_session(DEFAULT_MODEL)
+
+
+def compose_on_white(image_bytes: bytes, model_key: str | None = None) -> Image.Image:
     """Remove o fundo e compõe sobre canvas branco. Retorna imagem RGB."""
-    session = get_rembg_session()
+    session = get_rembg_session(model_key)
     output_bytes = remove(image_bytes, session=session)
     foreground = Image.open(io.BytesIO(output_bytes)).convert("RGBA")
     white_bg = Image.new("RGBA", foreground.size, (255, 255, 255, 255))

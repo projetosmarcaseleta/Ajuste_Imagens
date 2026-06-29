@@ -33,6 +33,9 @@ from process_images import (
     load_spreadsheet,
     process_from_file,
     process_from_url,
+    preload_model,
+    AVAILABLE_MODELS,
+    DEFAULT_MODEL,
     SUPPORTED_EXTENSIONS,
 )
 
@@ -42,6 +45,9 @@ BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = BASE_DIR / "saida"
 UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
+
+# ── Pré-carrega o modelo de remoção de fundo (evita race condition e OOM) ──
+preload_model()
 
 # ── Estado global dos jobs ──────────────────────────────────────────────
 
@@ -158,6 +164,7 @@ def _process_one_foto_am(job_id, foto, index, total, opts):
     
     token = opts["token"]
     delete_old = opts["deleteOld"]
+    model_key = opts.get("model", DEFAULT_MODEL)
     
     try:
         if is_job_cancelled(job_id):
@@ -166,7 +173,7 @@ def _process_one_foto_am(job_id, foto, index, total, opts):
         if not src_url:
             raise Exception("URL da imagem ausente")
             
-        emit_event(job_id, {"event": "log", "tp": "info", "msg": f"   🎨 Removendo fundo..."})
+        emit_event(job_id, {"event": "log", "tp": "info", "msg": f"   🎨 Removendo fundo (modelo: {model_key})..."})
         
         status, img_data = _download_image(src_url)
         if status != 200 or not img_data:
@@ -175,7 +182,7 @@ def _process_one_foto_am(job_id, foto, index, total, opts):
         if is_job_cancelled(job_id):
             raise Exception("Cancelado pelo usuário")
             
-        result_img = compose_on_white(img_data)
+        result_img = compose_on_white(img_data, model_key=model_key)
         
         filename = f"bgrem_{int(time.time())}_{uuid.uuid4().hex[:6]}.jpg"
         filepath = TEMP_DIR / filename
@@ -273,7 +280,7 @@ def _process_one_foto_am(job_id, foto, index, total, opts):
         
     return result
 
-def _process_am_job_worker(job_id, oi, skus, token, delete_old):
+def _process_am_job_worker(job_id, oi, skus, token, delete_old, model_key=None):
     try:
         if is_job_cancelled(job_id):
             emit_event(job_id, {"event": "error", "msg": "Cancelado pelo usuário"})
@@ -306,7 +313,7 @@ def _process_am_job_worker(job_id, oi, skus, token, delete_old):
         results = []
         done_count = 0
         
-        opts = {"token": token, "deleteOld": delete_old}
+        opts = {"token": token, "deleteOld": delete_old, "model": model_key or DEFAULT_MODEL}
         
         with ThreadPoolExecutor(max_workers=CONCURRENCY) as executor:
             futures = {
@@ -354,6 +361,20 @@ def index():
 
 # ── API: Processar AnyMarket / n8n ──────────────────────────────────────
 
+@app.route("/api/models")
+def api_models():
+    """Retorna os modelos de IA disponíveis para remoção de fundo."""
+    models = []
+    for key, rembg_name in AVAILABLE_MODELS.items():
+        models.append({
+            "key": key,
+            "label": "Padrão (rápido)" if key == "padrao" else "Preciso (detalhado)",
+            "description": "U²-Net — rápido, boa qualidade geral" if key == "padrao" else "BiRefNet — mais lento, melhor precisão em produtos complexos",
+            "default": key == DEFAULT_MODEL,
+        })
+    return jsonify({"models": models})
+
+
 @app.route("/api/processar", methods=["POST"])
 def api_processar():
     try:
@@ -361,6 +382,7 @@ def api_processar():
         oi = str(body.get("oi", "")).strip()
         token = str(body.get("token", "")).strip()
         delete_old = body.get("deleteOld", True)
+        model_key = str(body.get("model", DEFAULT_MODEL)).strip()
         
         skus_raw = body.get("skus", [])
         if isinstance(skus_raw, str):
@@ -380,7 +402,7 @@ def api_processar():
             
         thread = threading.Thread(
             target=_process_am_job_worker,
-            args=(job_id, oi, skus, token, delete_old),
+            args=(job_id, oi, skus, token, delete_old, model_key),
             daemon=True
         )
         thread.start()
@@ -504,9 +526,11 @@ def preview_image():
     if not file:
         return jsonify({"error": "Nenhuma imagem enviada"}), 400
 
+    model_key = request.form.get("model", DEFAULT_MODEL)
+
     try:
         data = file.read()
-        result = compose_on_white(data)
+        result = compose_on_white(data, model_key=model_key)
 
         buf = io.BytesIO()
         result.save(buf, format="JPEG", quality=95)
