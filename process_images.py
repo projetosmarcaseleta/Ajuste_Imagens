@@ -65,6 +65,15 @@ DEFAULT_MODEL = "padrao"
 _sessions: dict[str, object] = {}
 _sessions_lock = threading.Lock()
 
+# Semáforo global: apenas 1 inferência rembg por vez.
+# O birefnet aloca ~2-3 GB por chamada; sem isso, threads simultâneas
+# somam mais de 6 GB e o kernel OOM-mata o worker do Gunicorn.
+_inference_sem = threading.Semaphore(1)
+
+# Tamanho máximo (lado maior) antes de entrar na inferência.
+# Reduz pico de VRAM/RAM sem impacto perceptível na qualidade final.
+MAX_INFERENCE_SIZE = 2000
+
 
 def get_rembg_session(model_key: str | None = None):
     """Retorna a sessão rembg para o modelo solicitado (com cache thread-safe)."""
@@ -108,14 +117,47 @@ def preload_model():
     gc.collect()
 
 
+def _resize_if_needed(img: Image.Image, max_size: int = MAX_INFERENCE_SIZE) -> Image.Image:
+    """Redimensiona proporcionalmente se o lado maior ultrapassar max_size."""
+    w, h = img.size
+    if max(w, h) <= max_size:
+        return img
+    scale = max_size / max(w, h)
+    new_w, new_h = int(w * scale), int(h * scale)
+    logger.debug("Redimensionando imagem: %dx%d → %dx%d", w, h, new_w, new_h)
+    return img.resize((new_w, new_h), Image.LANCZOS)
+
+
 def compose_on_white(image_bytes: bytes, model_key: str | None = None) -> Image.Image:
-    """Remove o fundo e compõe sobre canvas branco. Retorna imagem RGB."""
+    """Remove o fundo e compõe sobre canvas branco. Retorna imagem RGB.
+    
+    Usa semáforo global (_inference_sem) para garantir no máximo 1 inferência
+    rembg simultânea, evitando OOM quando múltiplas threads processam em paralelo.
+    """
     session = get_rembg_session(model_key)
-    output_bytes = remove(image_bytes, session=session)
+
+    # Redimensiona antes da inferência para reduzir pico de memória
+    src_img = Image.open(io.BytesIO(image_bytes))
+    src_img = _resize_if_needed(src_img)
+    buf = io.BytesIO()
+    src_img.save(buf, format="PNG")
+    image_bytes_resized = buf.getvalue()
+    src_img.close()
+    del buf
+
+    # Serializa inferências pesadas — apenas 1 por vez
+    with _inference_sem:
+        output_bytes = remove(image_bytes_resized, session=session)
+
+    gc.collect()
+
     foreground = Image.open(io.BytesIO(output_bytes)).convert("RGBA")
     white_bg = Image.new("RGBA", foreground.size, (255, 255, 255, 255))
     white_bg.paste(foreground, mask=foreground.split()[3])
-    return white_bg.convert("RGB")
+    result = white_bg.convert("RGB")
+    foreground.close()
+    white_bg.close()
+    return result
 
 
 def save_image(img: Image.Image, output_path: Path) -> None:
