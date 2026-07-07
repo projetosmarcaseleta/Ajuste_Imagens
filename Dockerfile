@@ -21,6 +21,7 @@ EXPOSE 3003
 # Cria as pastas de trabalho caso não existam
 RUN mkdir -p uploads saida
 
-# Inicia a aplicação usando gunicorn na porta 3003, com timeout alto para processamento
-# --preload: carrega o modelo uma vez antes de fork, economizando memória
-CMD ["gunicorn", "--workers", "1", "--threads", "4", "--bind", "0.0.0.0:3003", "--timeout", "300", "--preload", "app:app"]
+# Inicia a aplicação usando gunicorn na porta 3003
+# --preload: carrega AMBOS os modelos uma vez antes de fork, economizando memória via copy-on-write
+# --timeout 600: tempo suficiente para carregar birefnet (~1GB) no boot
+CMD ["gunicorn", "--workers", "1", "--threads", "4", "--bind", "0.0.0.0:3003", "--timeout", "600", "--graceful-timeout", "30", "--preload", "app:app"]

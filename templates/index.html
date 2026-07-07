@@ -660,9 +660,31 @@
         if (amEventSource) amEventSource.close();
         
         amEventSource = new EventSource(`/api/progress/${jobId}`);
+        let reconnectAttempts = 0;
+        let heartbeatTimeout = null;
+
+        function resetHeartbeatTimer() {
+            clearTimeout(heartbeatTimeout);
+            // Se passar 45s sem nenhum evento (heartbeat ou dado), considera erro
+            heartbeatTimeout = setTimeout(() => {
+                amEventSource.close();
+                addAMLog('⏱️ Timeout: sem resposta do servidor há 45s. O worker pode ter sido reiniciado.', 'err');
+                const amHeaderTO = document.querySelector('#am-progress .progress-header h4');
+                if (amHeaderTO) amHeaderTO.innerHTML = '❌ Timeout!';
+                document.getElementById('am-progress-status').textContent = '❌ Timeout — recarregue a página e tente novamente';
+                amProcessBtn.disabled = false;
+                amCancelBtn.style.display = 'none';
+            }, 45000);
+        }
+
+        amEventSource.onopen = () => {
+            reconnectAttempts = 0;
+            resetHeartbeatTimer();
+        };
         
         amEventSource.onmessage = (e) => {
-            if (e.data.startsWith(':')) return;
+            resetHeartbeatTimer();
+            if (e.data.startsWith(':')) return; // heartbeat
             
             try {
                 const data = JSON.parse(e.data);
@@ -675,8 +697,8 @@
                     document.getElementById('am-progress-text').textContent = `${data.done} / ${data.total}`;
                     document.getElementById('am-progress-status').textContent = `Processando... ${pct}% (OK: ${data.ok}, Erros: ${data.erros})`;
                 } else if (data.event === 'complete') {
+                    clearTimeout(heartbeatTimeout);
                     document.getElementById('am-progress-status').textContent = `✅ Concluído! (Total: ${data.total}, OK: ${data.ok}, Erros: ${data.erros})`;
-                    // Atualiza o header: remove spinner e troca texto
                     const amHeader = document.querySelector('#am-progress .progress-header h4');
                     if (amHeader) amHeader.innerHTML = '✅ Concluído!';
                     document.getElementById('am-progress-bar').style.width = '100%';
@@ -685,9 +707,9 @@
                     amCancelBtn.style.display = 'none';
                     showToast('Processamento AnyMarket finalizado!', 'success');
                 } else if (data.event === 'error') {
+                    clearTimeout(heartbeatTimeout);
                     addAMLog(`Erro: ${data.msg}`, 'err');
                     document.getElementById('am-progress-status').textContent = `❌ Erro: ${data.msg}`;
-                    // Atualiza o header: remove spinner e mostra erro
                     const amHeaderErr = document.querySelector('#am-progress .progress-header h4');
                     if (amHeaderErr) amHeaderErr.innerHTML = '❌ Erro!';
                     amEventSource.close();
@@ -700,9 +722,18 @@
         };
         
         amEventSource.onerror = () => {
-            amEventSource.close();
-            amProcessBtn.disabled = false;
-            amCancelBtn.style.display = 'none';
+            reconnectAttempts++;
+            if (reconnectAttempts >= 3) {
+                clearTimeout(heartbeatTimeout);
+                amEventSource.close();
+                addAMLog('❌ Conexão perdida com o servidor (worker reiniciado ou OOM). Verifique os logs do servidor.', 'err');
+                const amHeaderErr2 = document.querySelector('#am-progress .progress-header h4');
+                if (amHeaderErr2) amHeaderErr2.innerHTML = '❌ Conexão perdida!';
+                document.getElementById('am-progress-status').textContent = '❌ Conexão perdida — o servidor pode ter reiniciado';
+                amProcessBtn.disabled = false;
+                amCancelBtn.style.display = 'none';
+                showToast('Conexão com o servidor perdida', 'error');
+            }
         };
     }
 

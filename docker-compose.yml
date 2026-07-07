@@ -9,12 +9,17 @@ services:
     volumes:
       - ./uploads:/app/uploads
       - ./saida:/app/saida
-      # Mantém cache do modelo de remoção de fundo (rembg)
+      # Mantém cache dos modelos de remoção de fundo
       - ./u2net_models:/root/.u2net
+      # Cache do birefnet (evita re-download a cada rebuild)
+      - birefnet_cache:/root/.cache/huggingface
     deploy:
       resources:
         limits:
-          memory: 4G
+          memory: 6G
         reservations:
-          memory: 512M
+          memory: 2G
     restart: unless-stopped
+
+volumes:
+  birefnet_cache:

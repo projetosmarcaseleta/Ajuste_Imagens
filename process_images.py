@@ -92,9 +92,20 @@ def get_rembg_session(model_key: str | None = None):
 
 
 def preload_model():
-    """Pré-carrega o modelo padrão na inicialização (antes de aceitar requisições)."""
-    logger.info("Pré-carregando modelo rembg padrão (%s)...", DEFAULT_MODEL)
-    get_rembg_session(DEFAULT_MODEL)
+    """Pré-carrega TODOS os modelos na inicialização (antes do fork do Gunicorn).
+    
+    Com --preload, o Gunicorn carrega o app antes de fazer fork dos workers.
+    Isso significa que a memória dos modelos é compartilhada via copy-on-write,
+    evitando que cada worker precise realocar ~1GB+ para o birefnet.
+    """
+    for key in AVAILABLE_MODELS:
+        logger.info("Pré-carregando modelo rembg: %s (%s)...", key, AVAILABLE_MODELS[key])
+        session = get_rembg_session(key)
+        if session is None:
+            logger.warning("Falha ao pré-carregar modelo '%s'. Será carregado sob demanda.", key)
+        else:
+            logger.info("Modelo '%s' pré-carregado com sucesso.", key)
+    gc.collect()
 
 
 def compose_on_white(image_bytes: bytes, model_key: str | None = None) -> Image.Image:
