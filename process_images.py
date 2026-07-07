@@ -23,6 +23,7 @@ import gc
 import logging
 import sys
 import threading
+import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -55,65 +56,122 @@ logger = logging.getLogger(__name__)
 # Processamento de imagem — suporte a múltiplos modelos
 # ---------------------------------------------------------------------------
 
-# Modelos disponíveis (chave interna → nome rembg)
-AVAILABLE_MODELS = {
-    "padrao":  "u2net",                # ~170MB, rápido, boa qualidade geral
-    "preciso": "birefnet-general-lite", # ~1GB+, mais lento, melhor precisão em produtos complexos
-}
-DEFAULT_MODEL = "padrao"
+# Modelos que ficam permanentemente em cache (leves)
+_PERSISTENT_MODELS = {"padrao"}
+# Modelos pesados: cache com TTL (carregam automaticamente, evictados após ociosidade)
+_HEAVY_MODELS = {"preciso"}
+
+# TTL em segundos: modelo pesado é mantido por este tempo após o último uso.
+# Durante um lote, o TTL é renovado a cada imagem → modelo carregado apenas 1 vez.
+HEAVY_MODEL_TTL = 60
 
 _sessions: dict[str, object] = {}
 _sessions_lock = threading.Lock()
+_heavy_last_used: dict[str, float] = {}   # timestamp do último uso de cada modelo pesado
 
 # Semáforo global: apenas 1 inferência rembg por vez.
-# O birefnet aloca ~2-3 GB por chamada; sem isso, threads simultâneas
-# somam mais de 6 GB e o kernel OOM-mata o worker do Gunicorn.
+# Impede que threads paralelas somem GBs de memória e matem o worker.
 _inference_sem = threading.Semaphore(1)
 
 # Tamanho máximo (lado maior) antes de entrar na inferência.
-# Reduz pico de VRAM/RAM sem impacto perceptível na qualidade final.
-MAX_INFERENCE_SIZE = 2000
+# 1500px: bom equilíbrio qualidade/memória para produtos e-commerce.
+MAX_INFERENCE_SIZE = 1500
+
+
+# Modelos disponíveis (chave interna → nome rembg)
+AVAILABLE_MODELS = {
+    "padrao":  "u2net",                # ~170MB, cache permanente
+    "preciso": "birefnet-general-lite", # ~1GB+, cache TTL de 60s
+}
+DEFAULT_MODEL = "padrao"
+
+
+def _load_session(model_key: str) -> object | None:
+    """Carrega uma sessão rembg (sempre instancia nova, sem cache)."""
+    model_name = AVAILABLE_MODELS[model_key]
+    logger.info("Carregando modelo rembg: %s (%s)...", model_key, model_name)
+    try:
+        session = new_session(model_name)
+        logger.info("Modelo '%s' carregado com sucesso.", model_key)
+        return session
+    except Exception as exc:
+        logger.error("Erro ao carregar modelo %s: %s", model_name, exc)
+        return None
+
+
+def _heavy_model_evictor():
+    """Thread daemon que verifica periodicamente se modelos pesados expiraram o TTL.
+    
+    Roda a cada 15s. Se um modelo pesado não foi usado nos últimos HEAVY_MODEL_TTL
+    segundos, remove da cache e libera memória.
+    """
+    while True:
+        time.sleep(15)
+        try:
+            now = time.time()
+            to_evict = []
+            with _sessions_lock:
+                for key in list(_heavy_last_used.keys()):
+                    idle = now - _heavy_last_used.get(key, 0)
+                    if idle >= HEAVY_MODEL_TTL and key in _sessions:
+                        to_evict.append(key)
+                for key in to_evict:
+                    del _sessions[key]
+                    del _heavy_last_used[key]
+            if to_evict:
+                gc.collect()
+                for key in to_evict:
+                    logger.info("Modelo pesado '%s' removido da cache (ocioso por %ds+).", key, HEAVY_MODEL_TTL)
+        except Exception as exc:
+            logger.warning("Evictor: erro inesperado: %s", exc)
+
+
+# Inicia o evictor como thread daemon (morre junto com o processo)
+_evictor_thread = threading.Thread(target=_heavy_model_evictor, daemon=True, name="heavy-model-evictor")
+_evictor_thread.start()
 
 
 def get_rembg_session(model_key: str | None = None):
-    """Retorna a sessão rembg para o modelo solicitado (com cache thread-safe)."""
+    """Retorna a sessão rembg para o modelo solicitado.
+    
+    - Modelos leves (u2net): cache permanente.
+    - Modelos pesados (birefnet): cache com TTL. Carregado na primeira chamada,
+      mantido enquanto há uso, evictado após HEAVY_MODEL_TTL segundos de ociosidade.
+    """
     if model_key is None:
         model_key = DEFAULT_MODEL
     model_key = model_key if model_key in AVAILABLE_MODELS else DEFAULT_MODEL
-    model_name = AVAILABLE_MODELS[model_key]
 
     # Fast path sem lock
     if model_key in _sessions:
+        if model_key in _HEAVY_MODELS:
+            _heavy_last_used[model_key] = time.time()  # renova TTL
         return _sessions[model_key]
 
     with _sessions_lock:
-        # Double-check após adquirir o lock
         if model_key not in _sessions:
-            logger.info("Carregando modelo rembg: %s (%s)...", model_key, model_name)
-            try:
-                _sessions[model_key] = new_session(model_name)
-                gc.collect()
-                logger.info("Modelo '%s' carregado com sucesso.", model_key)
-            except Exception as exc:
-                logger.error("Erro ao carregar modelo %s: %s", model_name, exc)
+            session = _load_session(model_key)
+            if session is None:
                 return None
+            _sessions[model_key] = session
+            if model_key in _HEAVY_MODELS:
+                _heavy_last_used[model_key] = time.time()
     return _sessions[model_key]
 
 
 def preload_model():
-    """Pré-carrega TODOS os modelos na inicialização (antes do fork do Gunicorn).
+    """Pré-carrega apenas o modelo leve (u2net) no boot.
     
-    Com --preload, o Gunicorn carrega o app antes de fazer fork dos workers.
-    Isso significa que a memória dos modelos é compartilhada via copy-on-write,
-    evitando que cada worker precise realocar ~1GB+ para o birefnet.
+    O birefnet (~1GB) NÃO é pré-carregado: com --preload do Gunicorn,
+    o GC do Python invalida o COW durante o fork, duplicando a memória.
+    O birefnet será carregado na primeira requisição e mantido por TTL.
     """
-    for key in AVAILABLE_MODELS:
-        logger.info("Pré-carregando modelo rembg: %s (%s)...", key, AVAILABLE_MODELS[key])
-        session = get_rembg_session(key)
-        if session is None:
-            logger.warning("Falha ao pré-carregar modelo '%s'. Será carregado sob demanda.", key)
-        else:
-            logger.info("Modelo '%s' pré-carregado com sucesso.", key)
+    logger.info("Pré-carregando modelo padrão: %s...", DEFAULT_MODEL)
+    session = get_rembg_session(DEFAULT_MODEL)
+    if session:
+        logger.info("Modelo padrão '%s' pré-carregado com sucesso.", DEFAULT_MODEL)
+    else:
+        logger.warning("Falha ao pré-carregar modelo padrão '%s'.", DEFAULT_MODEL)
     gc.collect()
 
 
@@ -130,11 +188,16 @@ def _resize_if_needed(img: Image.Image, max_size: int = MAX_INFERENCE_SIZE) -> I
 
 def compose_on_white(image_bytes: bytes, model_key: str | None = None) -> Image.Image:
     """Remove o fundo e compõe sobre canvas branco. Retorna imagem RGB.
-    
-    Usa semáforo global (_inference_sem) para garantir no máximo 1 inferência
-    rembg simultânea, evitando OOM quando múltiplas threads processam em paralelo.
+
+    Estratégia de memória:
+    - u2net (padrão): cache permanente, leve (~170MB).
+    - birefnet (preciso): cache TTL de {HEAVY_MODEL_TTL}s — reutilizado durante
+      um lote inteiro; evictado automaticamente após ociosidade.
+    - Semáforo garante apenas 1 inferência por vez.
+    - Imagem redimensionada a {MAX_INFERENCE_SIZE}px para limitar pico de RAM.
     """
-    session = get_rembg_session(model_key)
+    if model_key is None or model_key not in AVAILABLE_MODELS:
+        model_key = DEFAULT_MODEL
 
     # Redimensiona antes da inferência para reduzir pico de memória
     src_img = Image.open(io.BytesIO(image_bytes))
@@ -145,10 +208,16 @@ def compose_on_white(image_bytes: bytes, model_key: str | None = None) -> Image.
     src_img.close()
     del buf
 
-    # Serializa inferências pesadas — apenas 1 por vez
     with _inference_sem:
+        # get_rembg_session carrega se necessário e renova o TTL
+        session = get_rembg_session(model_key)
+        if session is None:
+            logger.warning("Sessão '%s' indisponível; usando padrão.", model_key)
+            session = get_rembg_session(DEFAULT_MODEL)
+
         output_bytes = remove(image_bytes_resized, session=session)
 
+    del image_bytes_resized
     gc.collect()
 
     foreground = Image.open(io.BytesIO(output_bytes)).convert("RGBA")
