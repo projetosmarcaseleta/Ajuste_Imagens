@@ -1,9 +1,10 @@
 FROM python:3.10-slim
 
-# Instala dependências do sistema necessárias para OpenCV e processamento de imagens
+# Instala dependências do sistema necessárias para OpenCV, processamento de imagens e HEIC
 RUN apt-get update && apt-get install -y \
     libgl1 \
     libglib2.0-0 \
+    libheif-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

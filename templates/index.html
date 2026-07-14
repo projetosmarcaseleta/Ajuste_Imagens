@@ -88,9 +88,9 @@
                     <button class="btn-browse" id="preview-browse-btn">
                         Selecionar Imagem
                     </button>
-                    <div class="upload-hint">JPG, PNG, WEBP — máx. 20MB</div>
+                    <div class="upload-hint">JPG, PNG, WEBP, HEIC — máx. 20MB</div>
                 </div>
-                <input type="file" id="preview-file-input" accept=".jpg,.jpeg,.png,.webp" hidden>
+                <input type="file" id="preview-file-input" accept=".jpg,.jpeg,.png,.webp,.heic,.heif" hidden>
             </div>
 
             <div class="preview-panel" id="preview-panel" style="display: none;">
@@ -154,9 +154,9 @@
                     <button class="btn-browse" id="batch-browse-btn">
                         Selecionar Imagens
                     </button>
-                    <div class="upload-hint">Suporta JPG, PNG, WEBP — múltiplos arquivos</div>
+                    <div class="upload-hint">Suporta JPG, PNG, WEBP, HEIC — múltiplos arquivos</div>
                 </div>
-                <input type="file" id="batch-file-input" accept=".jpg,.jpeg,.png,.webp" multiple hidden>
+                <input type="file" id="batch-file-input" accept=".jpg,.jpeg,.png,.webp,.heic,.heif" multiple hidden>
             </div>
 
             <div class="file-list" id="batch-file-list" style="display: none;"></div>
@@ -383,8 +383,15 @@
             fd.append('model', getSelectedModel('preview-model'));
             const resp = await fetch('/api/preview', { method: 'POST', body: fd });
             if (!resp.ok) {
-                const err = await resp.json();
-                throw new Error(err.error || 'Erro no processamento');
+                let errMsg = 'Erro no processamento';
+                const contentType = resp.headers.get('content-type') || '';
+                if (contentType.includes('application/json')) {
+                    const err = await resp.json();
+                    errMsg = err.error || errMsg;
+                } else {
+                    errMsg = `Erro HTTP ${resp.status} — o servidor retornou uma resposta inesperada`;
+                }
+                throw new Error(errMsg);
             }
             const blob = await resp.blob();
             previewResult.src = URL.createObjectURL(blob);
@@ -438,7 +445,7 @@
     });
 
     function setBatchFiles(files) {
-        batchFiles = files.filter(f => ['.jpg', '.jpeg', '.png', '.webp']
+        batchFiles = files.filter(f => ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif']
             .some(ext => f.name.toLowerCase().endsWith(ext)));
 
         if (!batchFiles.length) {
@@ -477,6 +484,10 @@
 
         try {
             const resp = await fetch('/api/upload-images', { method: 'POST', body: fd });
+            const contentType = resp.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+                throw new Error(`Erro HTTP ${resp.status} — o servidor retornou uma resposta inesperada`);
+            }
             const data = await resp.json();
             if (!resp.ok) throw new Error(data.error);
 
@@ -623,6 +634,10 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
+            const contentType = resp.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+                throw new Error(`Erro HTTP ${resp.status} — o servidor retornou uma resposta inesperada`);
+            }
             const data = await resp.json();
             
             if (!resp.ok) throw new Error(data.error);

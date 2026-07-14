@@ -32,13 +32,21 @@ from PIL import Image
 from rembg import remove, new_session
 from tqdm import tqdm
 
+# Suporte a HEIC/HEIF — registra o plugin no Pillow
+try:
+    import pillow_heif
+    pillow_heif.register_heif_opener()
+    HEIF_AVAILABLE = True
+except ImportError:
+    HEIF_AVAILABLE = False
+
 try:
     import pandas as pd
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False
 
-SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 
 # Colunas de imagem fixas na planilha
 IMAGE_COLUMNS = [f"IMAGEM {i}" for i in range(1, 11)]  # IMAGEM 1 … IMAGEM 10
@@ -145,6 +153,9 @@ def compose_on_white(image_bytes: bytes, model_key: str | None = None) -> Image.
 
     # Redimensiona antes da inferência para controlar pico de memória
     src_img = Image.open(io.BytesIO(image_bytes))
+    # HEIC/HEIF: converte para RGB (remove canal alpha se houver)
+    if src_img.mode not in ("RGB", "RGBA"):
+        src_img = src_img.convert("RGB")
     src_img = _resize_if_needed(src_img)
     buf = io.BytesIO()
     src_img.save(buf, format="PNG")
