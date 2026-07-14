@@ -40,6 +40,11 @@ from process_images import (
 )
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB
+
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    return jsonify({"error": "Arquivo muito grande. Limite máximo: 50 MB"}), 413
 
 BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = BASE_DIR / "saida"
