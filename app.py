@@ -149,7 +149,7 @@ def _download_image(url):
         return resp.status, resp.read()
 
 
-def _process_one_foto_am(job_id, foto, index, total, opts):
+def _process_one_foto_am_preview(job_id, foto, index, total, opts):
     src_url = foto.get("standard_url") or foto.get("original_url")
     is_main = str(foto.get("main_photo")) == '1' or foto.get("main_photo") is True
     idx = int(foto.get("product_photo_index", 0))
@@ -160,15 +160,26 @@ def _process_one_foto_am(job_id, foto, index, total, opts):
     if variacao:
         label += f" — Var: {variacao}"
         
-    emit_event(job_id, {"event": "log", "tp": "info", "msg": f"   ⏳ {label}"})
+    emit_event(job_id, {"event": "log", "tp": "info", "msg": f"   ⏳ Gerando prévia para {label}"})
     
+    item_id = f"{foto.get('id_produto')}_{foto.get('id_foto')}_{index}"
     result = {
-        "sku": foto.get("sku"), "id_produto": foto.get("id_produto"), "id_foto": foto.get("id_foto"),
-        "variacao": variacao, "url_original": src_url, "nova_url": None, "status": "ERRO", "motivo_erro": None
+        "id": item_id,
+        "sku": foto.get("sku"),
+        "id_produto": foto.get("id_produto"),
+        "id_foto": foto.get("id_foto"),
+        "variacao": variacao,
+        "tem_variacao_visual": tem_var,
+        "main_photo": is_main,
+        "product_photo_index": idx,
+        "url_original": src_url,
+        "nova_url": None,
+        "filename": None,
+        "model_used": opts.get("model", DEFAULT_MODEL),
+        "status": "PENDENTE",
+        "motivo_erro": None
     }
     
-    token = opts["token"]
-    delete_old = opts["deleteOld"]
     model_key = opts.get("model", DEFAULT_MODEL)
     
     try:
@@ -197,82 +208,10 @@ def _process_one_foto_am(job_id, foto, index, total, opts):
         with open(filepath, "wb") as f:
             f.write(buf.getvalue())
             
-        def _cleanup():
-            time.sleep(600) # 10 min
-            try:
-                if filepath.exists():
-                    filepath.unlink()
-            except:
-                pass
-        threading.Thread(target=_cleanup, daemon=True).start()
-        
-        new_url = f"{SELF_BASE}/temp/{filename}"
-        
-        if is_job_cancelled(job_id):
-            raise Exception("Cancelado pelo usuário")
-            
-        emit_event(job_id, {"event": "log", "tp": "info", "msg": f"   📤 Enviando nova foto ao AnyMarket... (URL: {new_url})"})
-        
-        post_body = {"url": new_url, "index": idx, "main": False}
-        if tem_var and variacao:
-            post_body["variation"] = variacao
-            emit_event(job_id, {"event": "log", "tp": "info", "msg": f"   🏷️  Variação visual: {variacao}"})
-            
-        post_r_status = 500
-        post_r_body = {}
-        for attempt in range(1, 4):
-            if is_job_cancelled(job_id):
-                raise Exception("Cancelado pelo usuário")
-            post_r_status, post_r_body = _am_request("POST", f"/v2/products/{foto['id_produto']}/images", post_body, token)
-            if post_r_status < 400 and post_r_body.get("id"):
-                break
-            if attempt < 3:
-                delay = 3 if post_r_status != 429 else 3 * attempt
-                emit_event(job_id, {"event": "log", "tp": "skip", "msg": f"   ⚠️ POST falhou (HTTP {post_r_status}), aguardando {delay}s..."})
-                time.sleep(delay)
-                
-        if post_r_status >= 400 or not post_r_body.get("id"):
-            raise Exception(f"POST {post_r_status}: {str(post_r_body)[:200]}")
-            
-        new_photo_id = post_r_body["id"]
-        result["nova_url"] = new_url
-        
-        if is_job_cancelled(job_id):
-            raise Exception("Cancelado pelo usuário")
-            
-        emit_event(job_id, {"event": "log", "tp": "info", "msg": f"   🔢 Ajustando índice ({idx}) e main ({is_main})..."})
-        try:
-            put_body = {"id": int(new_photo_id), "index": idx, "main": is_main}
-            if tem_var and variacao:
-                put_body["variation"] = variacao
-                
-            put_r_status, put_r_body = _am_request("PUT", f"/v2/products/{foto['id_produto']}/images", put_body, token)
-            if put_r_status == 429:
-                emit_event(job_id, {"event": "log", "tp": "skip", "msg": f"   ⚠️ PUT Rate limit, aguardando..."})
-                time.sleep(3)
-                put_r_status, put_r_body = _am_request("PUT", f"/v2/products/{foto['id_produto']}/images", put_body, token)
-            if put_r_status >= 400:
-                raise Exception(f"HTTP {put_r_status}")
-        except Exception as put_err:
-            emit_event(job_id, {"event": "log", "tp": "skip", "msg": f"   ⚠️ PUT ignorado: {str(put_err)}"})
-            
-        if delete_old:
-            if is_job_cancelled(job_id):
-                raise Exception("Cancelado pelo usuário")
-            emit_event(job_id, {"event": "log", "tp": "info", "msg": f"   🗑️  Removendo foto antiga..."})
-            try:
-                del_r_status, del_r_body = _am_request("DELETE", f"/v2/products/{foto['id_produto']}/images/{foto['id_foto']}", None, token)
-                if del_r_status == 429:
-                    emit_event(job_id, {"event": "log", "tp": "skip", "msg": f"   ⚠️ DELETE Rate limit, aguardando..."})
-                    time.sleep(3)
-                    del_r_status, del_r_body = _am_request("DELETE", f"/v2/products/{foto['id_produto']}/images/{foto['id_foto']}", None, token)
-                if del_r_status >= 400 and del_r_status != 404:
-                    raise Exception(f"HTTP {del_r_status}")
-            except Exception as del_err:
-                emit_event(job_id, {"event": "log", "tp": "skip", "msg": f"   ⚠️ DELETE ignorado: {str(del_err)}"})
-                
-        result["status"] = "SUCESSO"
-        emit_event(job_id, {"event": "log", "tp": "ok", "msg": f"   ✅ Concluída!"})
+        result["filename"] = filename
+        result["nova_url"] = f"/temp/{filename}"
+        result["status"] = "PENDENTE"
+        emit_event(job_id, {"event": "log", "tp": "ok", "msg": f"   ✅ Prévia gerada!"})
         
     except Exception as err:
         if str(err) == "Cancelado pelo usuário":
@@ -280,10 +219,89 @@ def _process_one_foto_am(job_id, foto, index, total, opts):
             result["motivo_erro"] = str(err)
             emit_event(job_id, {"event": "log", "tp": "err", "msg": f"   🛑 Cancelado!"})
         else:
+            result["status"] = "ERRO"
             result["motivo_erro"] = str(err)
             emit_event(job_id, {"event": "log", "tp": "err", "msg": f"   ❌ {str(err)}"})
         
     return result
+
+
+def _upload_one_foto_to_am(job_id, item, token, delete_old):
+    src_url = item.get("nova_url")
+    if not src_url:
+        raise Exception("URL temporária ausente")
+    
+    if src_url.startswith("/"):
+        full_url = f"{SELF_BASE}{src_url}"
+    else:
+        full_url = src_url
+
+    id_produto = item["id_produto"]
+    id_foto = item["id_foto"]
+    idx = item.get("product_photo_index", 0)
+    is_main = item.get("main_photo", False)
+    variacao = item.get("variacao")
+    tem_var = item.get("tem_variacao_visual", False)
+
+    emit_event(job_id, {"event": "log", "tp": "info", "msg": f"   📤 Enviando foto ao AnyMarket (SKU {item.get('sku')} / Produto {id_produto})..."})
+
+    post_body = {"url": full_url, "index": idx, "main": False}
+    if tem_var and variacao:
+        post_body["variation"] = variacao
+
+    post_r_status = 500
+    post_r_body = {}
+    for attempt in range(1, 4):
+        if is_job_cancelled(job_id):
+            raise Exception("Cancelado pelo usuário")
+        post_r_status, post_r_body = _am_request("POST", f"/v2/products/{id_produto}/images", post_body, token)
+        if post_r_status < 400 and post_r_body.get("id"):
+            break
+        if attempt < 3:
+            delay = 3 if post_r_status != 429 else 3 * attempt
+            emit_event(job_id, {"event": "log", "tp": "skip", "msg": f"   ⚠️ POST falhou (HTTP {post_r_status}), aguardando {delay}s..."})
+            time.sleep(delay)
+
+    if post_r_status >= 400 or not post_r_body.get("id"):
+        raise Exception(f"POST {post_r_status}: {str(post_r_body)[:200]}")
+
+    new_photo_id = post_r_body["id"]
+
+    if is_job_cancelled(job_id):
+        raise Exception("Cancelado pelo usuário")
+
+    emit_event(job_id, {"event": "log", "tp": "info", "msg": f"   🔢 Ajustando índice ({idx}) e main ({is_main})..."})
+    try:
+        put_body = {"id": int(new_photo_id), "index": idx, "main": is_main}
+        if tem_var and variacao:
+            put_body["variation"] = variacao
+
+        put_r_status, put_r_body = _am_request("PUT", f"/v2/products/{id_produto}/images", put_body, token)
+        if put_r_status == 429:
+            time.sleep(3)
+            put_r_status, put_r_body = _am_request("PUT", f"/v2/products/{id_produto}/images", put_body, token)
+        if put_r_status >= 400:
+            raise Exception(f"HTTP {put_r_status}")
+    except Exception as put_err:
+        emit_event(job_id, {"event": "log", "tp": "skip", "msg": f"   ⚠️ PUT ignorado: {str(put_err)}"})
+
+    if delete_old:
+        if is_job_cancelled(job_id):
+            raise Exception("Cancelado pelo usuário")
+        emit_event(job_id, {"event": "log", "tp": "info", "msg": f"   🗑️  Removendo foto antiga..."})
+        try:
+            del_r_status, del_r_body = _am_request("DELETE", f"/v2/products/{id_produto}/images/{id_foto}", None, token)
+            if del_r_status == 429:
+                time.sleep(3)
+                del_r_status, del_r_body = _am_request("DELETE", f"/v2/products/{id_produto}/images/{id_foto}", None, token)
+            if del_r_status >= 400 and del_r_status != 404:
+                raise Exception(f"HTTP {del_r_status}")
+        except Exception as del_err:
+            emit_event(job_id, {"event": "log", "tp": "skip", "msg": f"   ⚠️ DELETE ignorado: {str(del_err)}"})
+
+    item["status"] = "ENVIADO"
+    emit_event(job_id, {"event": "log", "tp": "ok", "msg": f"   ✅ Foto enviada ao AnyMarket!"})
+
 
 def _process_am_job_worker(job_id, oi, skus, token, delete_old, model_key=None):
     try:
@@ -312,7 +330,7 @@ def _process_am_job_worker(job_id, oi, skus, token, delete_old, model_key=None):
             emit_event(job_id, {"event": "error", "msg": "Cancelado pelo usuário"})
             return
             
-        emit_event(job_id, {"event": "log", "tp": "info", "msg": f"📸 {len(fotos)} foto(s) encontrada(s). Processando com {CONCURRENCY} workers..."})
+        emit_event(job_id, {"event": "log", "tp": "info", "msg": f"📸 {len(fotos)} foto(s) encontrada(s). Gerando prévias com {CONCURRENCY} workers..."})
         emit_event(job_id, {"event": "progress", "total": len(fotos), "done": 0, "ok": 0, "erros": 0})
         
         results = []
@@ -322,7 +340,7 @@ def _process_am_job_worker(job_id, oi, skus, token, delete_old, model_key=None):
         
         with ThreadPoolExecutor(max_workers=CONCURRENCY) as executor:
             futures = {
-                executor.submit(_process_one_foto_am, job_id, f, i, len(fotos), opts): f 
+                executor.submit(_process_one_foto_am_preview, job_id, f, i, len(fotos), opts): f 
                 for i, f in enumerate(fotos)
             }
             
@@ -335,7 +353,7 @@ def _process_am_job_worker(job_id, oi, skus, token, delete_old, model_key=None):
                 results.append(res)
                 done_count += 1
                 
-                ok_n = sum(1 for r in results if r["status"] == "SUCESSO")
+                ok_n = sum(1 for r in results if r["status"] in ("PENDENTE", "SUCESSO"))
                 err_n = len(results) - ok_n
                 emit_event(job_id, {"event": "progress", "total": len(fotos), "done": done_count, "ok": ok_n, "erros": err_n})
                 
@@ -344,16 +362,87 @@ def _process_am_job_worker(job_id, oi, skus, token, delete_old, model_key=None):
             emit_event(job_id, {"event": "error", "msg": "Cancelado pelo usuário"})
             return
 
-        ok_total = sum(1 for r in results if r["status"] == "SUCESSO")
+        with jobs_lock:
+            jobs[job_id] = {
+                "id": job_id,
+                "type": "anymarket",
+                "status": "awaiting_approval",
+                "total": len(results),
+                "items": results,
+                "token": token,
+                "delete_old": delete_old,
+                "created_at": time.time(),
+            }
+
+        ok_total = sum(1 for r in results if r["status"] == "PENDENTE")
         err_total = len(results) - ok_total
-        emit_event(job_id, {"event": "complete", "total": len(results), "ok": ok_total, "erros": err_total, "results": results})
+        emit_event(job_id, {
+            "event": "preview_complete",
+            "total": len(results),
+            "ok": ok_total,
+            "erros": err_total,
+            "items": results
+        })
         
     except Exception as err:
         emit_event(job_id, {"event": "error", "msg": f"Erro fatal: {str(err)}"})
 
 
+def _commit_am_job_worker(job_id):
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            emit_event(job_id, {"event": "error", "msg": "Job não encontrado para commit"})
+            return
+        token = job["token"]
+        delete_old = job["delete_old"]
+        items = job["items"]
+        approved_items = [item for item in items if item["status"] == "APROVADO"]
+
+    if not approved_items:
+        emit_event(job_id, {"event": "log", "tp": "skip", "msg": "⚠️ Nenhuma foto foi aprovada para envio."})
+        emit_event(job_id, {"event": "commit_complete", "total": 0, "ok": 0, "erros": 0})
+        return
+
+    emit_event(job_id, {"event": "log", "tp": "info", "msg": f"🚀 Iniciando envio de {len(approved_items)} foto(s) aprovada(s) ao AnyMarket..."})
+
+    done_count = 0
+    ok_count = 0
+    err_count = 0
+
+    for item in approved_items:
+        if is_job_cancelled(job_id):
+            emit_event(job_id, {"event": "log", "tp": "err", "msg": "🛑 Envio cancelado pelo usuário!"})
+            emit_event(job_id, {"event": "error", "msg": "Cancelado pelo usuário"})
+            return
+
+        try:
+            _upload_one_foto_to_am(job_id, item, token, delete_old)
+            ok_count += 1
+        except Exception as err:
+            item["status"] = "ERRO"
+            item["motivo_erro"] = str(err)
+            err_count += 1
+            emit_event(job_id, {"event": "log", "tp": "err", "msg": f"   ❌ Falha ao enviar foto {item.get('id_foto')}: {str(err)}"})
+
+        done_count += 1
+        emit_event(job_id, {"event": "commit_progress", "total": len(approved_items), "done": done_count, "ok": ok_count, "erros": err_count})
+
+    with jobs_lock:
+        job["status"] = "completed"
+
+    emit_event(job_id, {
+        "event": "commit_complete",
+        "total": len(approved_items),
+        "ok": ok_count,
+        "erros": err_count,
+        "items": items
+    })
+
+
 jobs: dict[str, dict] = {}
 jobs_lock = threading.Lock()
+
 
 
 # ── Rotas de páginas ────────────────────────────────────────────────────
@@ -443,11 +532,110 @@ def api_progress(job_id):
                 
     return Response(event_stream(), mimetype="text/event-stream")
 
+@app.route("/api/job/<job_id>/reprocess_item", methods=["POST"])
+def api_reprocess_item(job_id):
+    try:
+        body = request.get_json(force=True)
+        item_id = body.get("item_id")
+        model_key = body.get("model", DEFAULT_MODEL)
+        
+        with jobs_lock:
+            job = jobs.get(job_id)
+            if not job:
+                return jsonify({"ok": False, "error": "Job não encontrado"}), 404
+            
+            target_item = None
+            for item in job["items"]:
+                if item["id"] == item_id:
+                    target_item = item
+                    break
+                    
+            if not target_item:
+                return jsonify({"ok": False, "error": "Item não encontrado"}), 404
+                
+            target_item["status"] = "REPROCESSANDO"
+
+        src_url = target_item["url_original"]
+        status, img_data = _download_image(src_url)
+        if status != 200 or not img_data:
+            target_item["status"] = "ERRO"
+            target_item["motivo_erro"] = f"Download da original falhou: HTTP {status}"
+            return jsonify({"ok": False, "error": target_item["motivo_erro"]}), 400
+            
+        result_img = compose_on_white(img_data, model_key=model_key)
+        
+        filename = f"bgrem_{int(time.time())}_{uuid.uuid4().hex[:6]}.jpg"
+        filepath = TEMP_DIR / filename
+        
+        buf = io.BytesIO()
+        result_img.save(buf, format="JPEG", quality=90)
+        with open(filepath, "wb") as f:
+            f.write(buf.getvalue())
+            
+        target_item["filename"] = filename
+        target_item["nova_url"] = f"/temp/{filename}"
+        target_item["model_used"] = model_key
+        target_item["status"] = "PENDENTE"
+        target_item["motivo_erro"] = None
+        
+        return jsonify({"ok": True, "item": target_item})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/job/<job_id>/update_items", methods=["POST"])
+def api_update_items(job_id):
+    try:
+        body = request.get_json(force=True)
+        updates = body.get("updates", [])
+        
+        with jobs_lock:
+            job = jobs.get(job_id)
+            if not job:
+                return jsonify({"ok": False, "error": "Job não encontrado"}), 404
+                
+            items_dict = {it["id"]: it for it in job["items"]}
+            for up in updates:
+                item_id = up.get("id")
+                new_status = up.get("status")
+                if item_id in items_dict and new_status in ("APROVADO", "IGNORADO", "PENDENTE"):
+                    items_dict[item_id]["status"] = new_status
+                    
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/job/<job_id>/commit", methods=["POST"])
+def api_commit_job(job_id):
+    try:
+        with jobs_lock:
+            job = jobs.get(job_id)
+            if not job:
+                return jsonify({"ok": False, "error": "Job não encontrado"}), 404
+            if job.get("status") == "committing":
+                return jsonify({"ok": False, "error": "Job já está em processo de envio"}), 400
+                
+            job["status"] = "committing"
+            
+        thread = threading.Thread(
+            target=_commit_am_job_worker,
+            args=(job_id,),
+            daemon=True
+        )
+        thread.start()
+        
+        return jsonify({"ok": True, "message": "Sincronização iniciada"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
 @app.route("/temp/<filename>")
 def serve_temp(filename):
     if not (TEMP_DIR / filename).exists():
         return "Not found", 404
     return send_from_directory(TEMP_DIR, filename, mimetype="image/jpeg")
+
 
 
 

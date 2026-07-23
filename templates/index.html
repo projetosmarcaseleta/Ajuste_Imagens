@@ -261,8 +261,25 @@
                 <div class="log-wrap" id="am-log" style="max-height: 250px; overflow-y: auto; background: var(--surface); padding: 12px; border-radius: 8px; margin-top: 16px; font-family: monospace; font-size: 12px;">
                 </div>
             </div>
+
+            <!-- ── Painel de Validação e Aprovação Visual ── -->
+            <div class="validation-container" id="am-validation-panel" style="display: none; margin-top: 24px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; background: var(--surface); padding: 16px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+                    <div>
+                        <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">🖼️ Galeria de Validação e Aprovação</h3>
+                        <p style="margin: 4px 0 0 0; color: #aaa; font-size: 13px;">Analise os resultados Antes x Depois, re-processe com outro modelo se necessário, e envie as fotos aprovadas ao AnyMarket.</p>
+                    </div>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <button class="btn btn-secondary" id="am-approve-all-btn">✅ Aprovar Todas</button>
+                        <button class="btn btn-primary" id="am-commit-btn" style="background: #00C851; border-color: #00C851;">🚀 Enviar Aprovadas ao AnyMarket</button>
+                    </div>
+                </div>
+
+                <div class="photo-grid" id="am-photo-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; margin-top: 16px;"></div>
+            </div>
         </div>
     </div>
+
 
 
 
@@ -710,19 +727,49 @@
                     const pct = data.total > 0 ? Math.round((data.done / data.total) * 100) : 0;
                     document.getElementById('am-progress-bar').style.width = `${pct}%`;
                     document.getElementById('am-progress-text').textContent = `${data.done} / ${data.total}`;
-                    document.getElementById('am-progress-status').textContent = `Processando... ${pct}% (OK: ${data.ok}, Erros: ${data.erros})`;
-                } else if (data.event === 'complete') {
-                    clearTimeout(heartbeatTimeout);
-                    document.getElementById('am-progress-status').textContent = `✅ Concluído! (Total: ${data.total}, OK: ${data.ok}, Erros: ${data.erros})`;
+                    document.getElementById('am-progress-status').textContent = `Gerando prévias... ${pct}% (OK: ${data.ok}, Erros: ${data.erros})`;
+                } else if (data.event === 'preview_complete') {
+                    clearTimeout(heartbeatTimer);
+                    document.getElementById('am-progress-status').textContent = `🖼️ Prévias geradas! Analise as fotos na galeria abaixo e clique em "Enviar Aprovadas".`;
                     const amHeader = document.querySelector('#am-progress .progress-header h4');
-                    if (amHeader) amHeader.innerHTML = '✅ Concluído!';
+                    if (amHeader) amHeader.innerHTML = '🖼️ Prévias Prontas — Aguardando Aprovação';
+                    document.getElementById('am-progress-bar').style.width = '100%';
+                    amCancelBtn.style.display = 'none';
+                    if (data.items) {
+                        renderValidationGrid(data.items);
+                    }
+                    showToast('Prévias prontas para validação!', 'success');
+                } else if (data.event === 'commit_progress') {
+                    const pct = data.total > 0 ? Math.round((data.done / data.total) * 100) : 0;
+                    document.getElementById('am-progress-bar').style.width = `${pct}%`;
+                    document.getElementById('am-progress-text').textContent = `${data.done} / ${data.total}`;
+                    document.getElementById('am-progress-status').textContent = `Enviando ao AnyMarket... ${pct}% (OK: ${data.ok}, Erros: ${data.erros})`;
+                } else if (data.event === 'commit_complete') {
+                    clearTimeout(heartbeatTimer);
+                    document.getElementById('am-progress-status').textContent = `✅ Sincronização com AnyMarket concluída! (Total: ${data.total}, OK: ${data.ok}, Erros: ${data.erros})`;
+                    const amHeader = document.querySelector('#am-progress .progress-header h4');
+                    if (amHeader) amHeader.innerHTML = '✅ Envio Concluído!';
                     document.getElementById('am-progress-bar').style.width = '100%';
                     amEventSource.close();
                     amProcessBtn.disabled = false;
                     amCancelBtn.style.display = 'none';
-                    showToast('Processamento AnyMarket finalizado!', 'success');
+                    const commitBtn = document.getElementById('am-commit-btn');
+                    if (commitBtn) {
+                        commitBtn.disabled = false;
+                        commitBtn.innerHTML = '🚀 Enviar Aprovadas ao AnyMarket';
+                    }
+                    if (data.items) {
+                        renderValidationGrid(data.items);
+                    }
+                    showToast('Fotos enviadas com sucesso ao AnyMarket!', 'success');
+                } else if (data.event === 'complete') {
+                    clearTimeout(heartbeatTimer);
+                    document.getElementById('am-progress-status').textContent = `✅ Concluído!`;
+                    amEventSource.close();
+                    amProcessBtn.disabled = false;
+                    amCancelBtn.style.display = 'none';
                 } else if (data.event === 'error') {
-                    clearTimeout(heartbeatTimeout);
+                    clearTimeout(heartbeatTimer);
                     addAMLog(`Erro: ${data.msg}`, 'err');
                     document.getElementById('am-progress-status').textContent = `❌ Erro: ${data.msg}`;
                     const amHeaderErr = document.querySelector('#am-progress .progress-header h4');
@@ -739,18 +786,252 @@
         amEventSource.onerror = () => {
             reconnectAttempts++;
             if (reconnectAttempts >= 3) {
-                clearTimeout(heartbeatTimeout);
+                clearTimeout(heartbeatTimer);
                 amEventSource.close();
-                addAMLog('❌ Conexão perdida com o servidor (worker reiniciado ou OOM). Verifique os logs do servidor.', 'err');
+                addAMLog('❌ Conexão perdida com o servidor. Verifique os logs do servidor.', 'err');
                 const amHeaderErr2 = document.querySelector('#am-progress .progress-header h4');
                 if (amHeaderErr2) amHeaderErr2.innerHTML = '❌ Conexão perdida!';
-                document.getElementById('am-progress-status').textContent = '❌ Conexão perdida — o servidor pode ter reiniciado';
+                document.getElementById('am-progress-status').textContent = '❌ Conexão perdida';
                 amProcessBtn.disabled = false;
                 amCancelBtn.style.display = 'none';
                 showToast('Conexão com o servidor perdida', 'error');
             }
         };
     }
+
+    // ── Lógica da Galeria de Validação ─────────────────────────────────────
+    let currentAMJobItems = [];
+
+    function renderValidationGrid(items) {
+        currentAMJobItems = items;
+        const grid = document.getElementById('am-photo-grid');
+        const panel = document.getElementById('am-validation-panel');
+        grid.innerHTML = '';
+        panel.style.display = 'block';
+
+        if (!items || items.length === 0) {
+            grid.innerHTML = '<p style="color: #aaa; grid-column: span 3;">Nenhuma foto encontrada para validação.</p>';
+            return;
+        }
+
+        items.forEach(item => {
+            const card = document.createElement('div');
+            card.className = 'photo-card';
+            card.id = `card-${item.id}`;
+            card.style.background = 'var(--surface)';
+            card.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+            card.style.borderRadius = '8px';
+            card.style.padding = '12px';
+            card.style.display = 'flex';
+            card.style.flexDirection = 'column';
+            card.style.gap = '10px';
+
+            const statusColors = {
+                'PENDENTE': '#33b5e5',
+                'APROVADO': '#00C851',
+                'IGNORADO': '#ffbb33',
+                'REPROCESSANDO': '#ffbb33',
+                'ENVIADO': '#00C851',
+                'ERRO': '#ff4444'
+            };
+
+            const isApproved = item.status === 'APROVADO';
+            const isIgnored = item.status === 'IGNORADO';
+
+            card.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px;">
+                    <div>
+                        <strong>SKU:</strong> ${item.sku || '—'}
+                        ${item.variacao ? `<span style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-left: 6px;">${item.variacao}</span>` : ''}
+                    </div>
+                    <span class="status-badge" id="badge-${item.id}" style="background: ${statusColors[item.status] || '#888'}; color: #fff; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: bold;">
+                        ${item.status}
+                    </span>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 11px; color: #888; margin-bottom: 4px;">Original</div>
+                        <img src="${item.url_original}" style="width: 100%; height: 140px; object-fit: contain; background: #222; border-radius: 4px;" alt="Original">
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 11px; color: #888; margin-bottom: 4px;">Sem Fundo</div>
+                        <img id="img-nova-${item.id}" src="${item.nova_url || ''}" style="width: 100%; height: 140px; object-fit: contain; background: #ffffff; border-radius: 4px;" alt="Sem Fundo">
+                    </div>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px;">
+                    <select class="form-input" id="model-${item.id}" style="padding: 4px 8px; font-size: 12px; flex: 1;">
+                        <option value="padrao" ${item.model_used === 'padrao' ? 'selected' : ''}>⚡ Padrão (u2net)</option>
+                        <option value="preciso" ${item.model_used === 'preciso' ? 'selected' : ''}>🎯 Preciso (isnet-general-use)</option>
+                    </select>
+                    <button class="btn btn-secondary btn-sm" onclick="reprocessItem('${item.id}')" id="btn-reprocess-${item.id}" style="padding: 4px 10px; font-size: 12px;" title="Reprocessar foto com o modelo selecionado">
+                        🔄 Refazer
+                    </button>
+                </div>
+
+                <div style="display: flex; gap: 8px; margin-top: 4px;">
+                    <button class="btn btn-sm" id="btn-approve-${item.id}" onclick="setItemStatus('${item.id}', 'APROVADO')" style="flex: 1; font-size: 12px; background: ${isApproved ? '#00C851' : 'rgba(255,255,255,0.1)'}; border: 1px solid ${isApproved ? '#00C851' : 'rgba(255,255,255,0.2)'};">
+                        ✅ Aprovar
+                    </button>
+                    <button class="btn btn-sm" id="btn-ignore-${item.id}" onclick="setItemStatus('${item.id}', 'IGNORADO')" style="flex: 1; font-size: 12px; background: ${isIgnored ? '#ffbb33' : 'rgba(255,255,255,0.1)'}; color: ${isIgnored ? '#000' : '#fff'}; border: 1px solid ${isIgnored ? '#ffbb33' : 'rgba(255,255,255,0.2)'};">
+                        ❌ Ignorar
+                    </button>
+                </div>
+            `;
+
+            grid.appendChild(card);
+        });
+    }
+
+    async function setItemStatus(itemId, newStatus) {
+        const item = currentAMJobItems.find(i => i.id === itemId);
+        if (!item) return;
+
+        item.status = newStatus;
+        updateCardUI(item);
+
+        try {
+            await fetch(`/api/job/${currentAMJobId}/update_items`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ updates: [{ id: itemId, status: newStatus }] })
+            });
+        } catch (e) {
+            console.error("Erro ao atualizar status:", e);
+        }
+    }
+
+    function updateCardUI(item) {
+        const badge = document.getElementById(`badge-${item.id}`);
+        const btnApprove = document.getElementById(`btn-approve-${item.id}`);
+        const btnIgnore = document.getElementById(`btn-ignore-${item.id}`);
+        const imgNova = document.getElementById(`img-nova-${item.id}`);
+
+        if (imgNova && item.nova_url) imgNova.src = item.nova_url;
+
+        const statusColors = {
+            'PENDENTE': '#33b5e5',
+            'APROVADO': '#00C851',
+            'IGNORADO': '#ffbb33',
+            'REPROCESSANDO': '#ffbb33',
+            'ENVIADO': '#00C851',
+            'ERRO': '#ff4444'
+        };
+
+        if (badge) {
+            badge.textContent = item.status;
+            badge.style.background = statusColors[item.status] || '#888';
+        }
+
+        if (btnApprove) {
+            const isApproved = item.status === 'APROVADO';
+            btnApprove.style.background = isApproved ? '#00C851' : 'rgba(255,255,255,0.1)';
+            btnApprove.style.borderColor = isApproved ? '#00C851' : 'rgba(255,255,255,0.2)';
+        }
+
+        if (btnIgnore) {
+            const isIgnored = item.status === 'IGNORADO';
+            btnIgnore.style.background = isIgnored ? '#ffbb33' : 'rgba(255,255,255,0.1)';
+            btnIgnore.style.color = isIgnored ? '#000' : '#fff';
+            btnIgnore.style.borderColor = isIgnored ? '#ffbb33' : 'rgba(255,255,255,0.2)';
+        }
+    }
+
+    async function reprocessItem(itemId) {
+        const item = currentAMJobItems.find(i => i.id === itemId);
+        if (!item || !currentAMJobId) return;
+
+        const modelSelect = document.getElementById(`model-${itemId}`);
+        const btnReprocess = document.getElementById(`btn-reprocess-${itemId}`);
+        const selectedModel = modelSelect ? modelSelect.value : 'padrao';
+
+        item.status = 'REPROCESSANDO';
+        updateCardUI(item);
+        if (btnReprocess) {
+            btnReprocess.disabled = true;
+            btnReprocess.innerHTML = '⏳ Processando...';
+        }
+
+        try {
+            const resp = await fetch(`/api/job/${currentAMJobId}/reprocess_item`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ item_id: itemId, model: selectedModel })
+            });
+
+            const data = await resp.json();
+            if (!resp.ok || !data.ok) throw new Error(data.error || 'Erro ao reprocessar foto');
+
+            Object.assign(item, data.item);
+            updateCardUI(item);
+            showToast(`Foto do SKU ${item.sku} reprocessada com o modelo ${selectedModel}!`, 'success');
+        } catch (e) {
+            item.status = 'ERRO';
+            item.motivo_erro = e.message;
+            updateCardUI(item);
+            showToast(`Erro ao reprocessar: ${e.message}`, 'error');
+        } finally {
+            if (btnReprocess) {
+                btnReprocess.disabled = false;
+                btnReprocess.innerHTML = '🔄 Refazer';
+            }
+        }
+    }
+
+    document.getElementById('am-approve-all-btn').addEventListener('click', async () => {
+        if (!currentAMJobItems || currentAMJobItems.length === 0) return;
+        const updates = [];
+        currentAMJobItems.forEach(item => {
+            if (item.status !== 'ENVIADO') {
+                item.status = 'APROVADO';
+                updateCardUI(item);
+                updates.push({ id: item.id, status: 'APROVADO' });
+            }
+        });
+
+        if (updates.length > 0 && currentAMJobId) {
+            await fetch(`/api/job/${currentAMJobId}/update_items`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ updates })
+            });
+            showToast(`${updates.length} foto(s) aprovadas!`, 'success');
+        }
+    });
+
+    document.getElementById('am-commit-btn').addEventListener('click', async () => {
+        if (!currentAMJobId) {
+            showToast('Nenhum job ativo para sincronização.', 'error');
+            return;
+        }
+
+        const approvedItems = currentAMJobItems.filter(i => i.status === 'APROVADO');
+        if (approvedItems.length === 0) {
+            showToast('Nenhuma foto aprovada! Clique em "Aprovar" nas fotos desejadas antes de enviar.', 'error');
+            return;
+        }
+
+        const confirmCommit = confirm(`Deseja enviar ${approvedItems.length} foto(s) aprovada(s) para o AnyMarket?`);
+        if (!confirmCommit) return;
+
+        const commitBtn = document.getElementById('am-commit-btn');
+        commitBtn.disabled = true;
+        commitBtn.innerHTML = '⏳ Enviando...';
+
+        try {
+            const resp = await fetch(`/api/job/${currentAMJobId}/commit`, { method: 'POST' });
+            const data = await resp.json();
+            if (!resp.ok || !data.ok) throw new Error(data.error || 'Erro ao iniciar commit');
+
+            showToast('Sincronização com o AnyMarket iniciada!', 'info');
+        } catch (e) {
+            showToast('Erro: ' + e.message, 'error');
+            commitBtn.disabled = false;
+            commitBtn.innerHTML = '🚀 Enviar Aprovadas ao AnyMarket';
+        }
+    });
+
 
 
 
