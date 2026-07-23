@@ -258,7 +258,10 @@
                     </button>
                 </div>
                 
-                <div class="log-wrap" id="am-log" style="max-height: 250px; overflow-y: auto; background: var(--surface); padding: 12px; border-radius: 8px; margin-top: 16px; font-family: monospace; font-size: 12px;">
+                <div style="margin-top: 16px; margin-bottom: 6px; font-size: 12px; font-weight: bold; color: #aaa; display: flex; align-items: center; gap: 6px;">
+                    <span>📋 Logs de Execução em Tempo Real:</span>
+                </div>
+                <div class="log-wrap" id="am-log" style="min-height: 120px; max-height: 250px; overflow-y: auto; background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.1); padding: 12px; border-radius: 8px; font-family: monospace; font-size: 12px;">
                 </div>
             </div>
 
@@ -641,6 +644,7 @@
         document.getElementById('am-progress-bar').style.width = '0%';
         document.getElementById('am-progress-text').textContent = '0 / 0';
         document.getElementById('am-progress-status').textContent = 'Iniciando...';
+        addAMLog('🚀 Conectando ao servidor e iniciando consulta no n8n...', 'info');
         // Restaura header com spinner
         const amHeaderReset = document.querySelector('#am-progress .progress-header h4');
         if (amHeaderReset) amHeaderReset.innerHTML = '<div class="spinner"></div> Sincronizando…';
@@ -697,16 +701,16 @@
 
         function resetHeartbeatTimer() {
             clearTimeout(heartbeatTimeout);
-            // Se passar 45s sem nenhum evento (heartbeat ou dado), considera erro
+            // Se passar 120s sem nenhum evento (heartbeat ou dado), considera erro
             heartbeatTimeout = setTimeout(() => {
                 amEventSource.close();
-                addAMLog('⏱️ Timeout: sem resposta do servidor há 45s. O worker pode ter sido reiniciado.', 'err');
+                addAMLog('⏱️ Timeout: sem resposta do servidor há 2 min. A consulta n8n ou o processamento demorou mais que o esperado.', 'err');
                 const amHeaderTO = document.querySelector('#am-progress .progress-header h4');
                 if (amHeaderTO) amHeaderTO.innerHTML = '❌ Timeout!';
-                document.getElementById('am-progress-status').textContent = '❌ Timeout — recarregue a página e tente novamente';
+                document.getElementById('am-progress-status').textContent = '❌ Timeout — tente novamente';
                 amProcessBtn.disabled = false;
                 amCancelBtn.style.display = 'none';
-            }, 45000);
+            }, 120000);
         }
 
         amEventSource.onopen = () => {

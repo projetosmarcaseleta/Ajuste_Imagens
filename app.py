@@ -106,7 +106,10 @@ def emit_event(job_id, data):
 
 def _json_request(method, host, req_path, body=None, extra_headers=None, port=443):
     protocol = "http" if port == 80 else "https"
-    url = f"{protocol}://{host}:{port}{req_path}"
+    if (protocol == "http" and port == 80) or (protocol == "https" and port == 443):
+        url = f"{protocol}://{host}{req_path}"
+    else:
+        url = f"{protocol}://{host}:{port}{req_path}"
     headers = {
         "Content-Type": "application/json",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -120,7 +123,7 @@ def _json_request(method, host, req_path, body=None, extra_headers=None, port=44
     
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=35) as resp:
+        with urllib.request.urlopen(req, timeout=120) as resp:
             resp_body = resp.read()
             try:
                 return resp.status, json.loads(resp_body)
@@ -145,7 +148,7 @@ def _download_image(url):
         'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
     }
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with urllib.request.urlopen(req, timeout=60) as resp:
         return resp.status, resp.read()
 
 
