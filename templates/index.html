@@ -587,7 +587,18 @@
             const resp = await fetch(`/api/cancelar/${currentAMJobId}`, { method: 'POST' });
             const data = await resp.json();
             if (resp.ok) {
-                showToast('Solicitação de cancelamento enviada!', 'info');
+                showToast('Operação cancelada com sucesso!', 'info');
+                addAMLog('🛑 Operação cancelada pelo usuário.', 'err');
+                if (amEventSource) {
+                    amEventSource.close();
+                    amEventSource = null;
+                }
+                document.getElementById('am-progress-status').textContent = '🛑 Operação cancelada pelo usuário';
+                const amHeader = document.querySelector('#am-progress .progress-header h4');
+                if (amHeader) amHeader.innerHTML = '🛑 Operação Cancelada';
+                amProcessBtn.disabled = false;
+                amCancelBtn.style.display = 'none';
+                amCancelBtn.innerHTML = '🛑 Cancelar Operação';
             } else {
                 showToast('Erro ao cancelar: ' + data.error, 'error');
                 amCancelBtn.disabled = false;
@@ -738,7 +749,12 @@
                     const amHeader = document.querySelector('#am-progress .progress-header h4');
                     if (amHeader) amHeader.innerHTML = '🖼️ Prévias Prontas — Aguardando Aprovação';
                     document.getElementById('am-progress-bar').style.width = '100%';
+                    amProcessBtn.disabled = false;
                     amCancelBtn.style.display = 'none';
+                    if (amEventSource) {
+                        amEventSource.close();
+                        amEventSource = null;
+                    }
                     if (data.items) {
                         renderValidationGrid(data.items);
                     }

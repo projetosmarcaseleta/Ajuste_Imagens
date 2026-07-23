@@ -340,21 +340,33 @@ def _process_am_job_worker(job_id, oi, skus, token, delete_old, model_key=None):
             emit_event(job_id, {"event": "error", "msg": "Cancelado pelo usuário"})
             return
             
-        emit_event(job_id, {"event": "log", "tp": "info", "msg": "🔍 Consultando banco de dados via n8n..."})
+        emit_event(job_id, {"event": "log", "tp": "info", "msg": f"🔍 Consultando banco de dados via n8n (OI: '{oi}', SKUs: {len(skus)})..."})
         status, body = _json_request("POST", N8N_HOST, N8N_PATH, {"oi": oi, "skus": skus}, {}, N8N_PORT)
         
         if is_job_cancelled(job_id):
             emit_event(job_id, {"event": "error", "msg": "Cancelado pelo usuário"})
             return
             
-        if status != 200 or not body.get("ok"):
-            emit_event(job_id, {"event": "error", "msg": f"Falha n8n ({status}): {str(body)[:200]}"})
+        if status != 200:
+            emit_event(job_id, {"event": "error", "msg": f"Falha n8n (HTTP {status}): {str(body)[:200]}"})
             return
-            
-        fotos = body.get("fotos", [])
+
+        emit_event(job_id, {"event": "log", "tp": "info", "msg": "📩 Resposta do n8n recebida! Processando fotos..."})
+
+        fotos = []
+        if isinstance(body, dict):
+            fotos = body.get("fotos", [])
+        elif isinstance(body, list):
+            for item in body:
+                if isinstance(item, dict):
+                    if "fotos" in item and isinstance(item["fotos"], list):
+                        fotos.extend(item["fotos"])
+                    elif "id_foto" in item or "original_url" in item or "standard_url" in item:
+                        fotos.append(item)
+
         if not fotos:
-            emit_event(job_id, {"event": "log", "tp": "skip", "msg": "⚠️ Nenhuma imagem encontrada."})
-            emit_event(job_id, {"event": "complete", "total": 0, "ok": 0, "erros": 0, "results": []})
+            emit_event(job_id, {"event": "log", "tp": "skip", "msg": "⚠️ Nenhuma imagem encontrada no retorno do n8n para a busca solicitada."})
+            emit_event(job_id, {"event": "preview_complete", "total": 0, "ok": 0, "erros": 0, "items": []})
             return
             
         if is_job_cancelled(job_id):
@@ -540,6 +552,7 @@ def api_processar():
 def api_cancelar(job_id):
     cancel_job(job_id)
     emit_event(job_id, {"event": "log", "tp": "err", "msg": "🛑 Cancelamento solicitado pelo usuário..."})
+    emit_event(job_id, {"event": "error", "msg": "Cancelado pelo usuário"})
     return jsonify({"ok": True, "message": "Cancelamento solicitado"})
 
 @app.route("/api/progress/<job_id>")
@@ -556,12 +569,17 @@ def api_progress(job_id):
             try:
                 data = q.get(timeout=15)
                 yield f"data: {json.dumps(data)}\n\n"
-                if data.get("event") in ("complete", "error", "done"):
+                if data.get("event") in ("complete", "error", "done", "preview_complete"):
                     break
             except Empty:
                 yield ": heartbeat\n\n"
                 
-    return Response(event_stream(), mimetype="text/event-stream")
+    resp = Response(event_stream(), mimetype="text/event-stream")
+    resp.headers["Cache-Control"] = "no-cache, no-transform"
+    resp.headers["X-Accel-Buffering"] = "no"
+    resp.headers["Content-Type"] = "text/event-stream; charset=utf-8"
+    resp.headers["Connection"] = "keep-alive"
+    return resp
 
 @app.route("/api/job/<job_id>/reprocess_item", methods=["POST"])
 def api_reprocess_item(job_id):
