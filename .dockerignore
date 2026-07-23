@@ -1,0 +1,14 @@
+.git
+.gitignore
+.github
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.xlsx
+u2net_models
+saida
+temp
+uploads
+update_app.py
+update_html.py

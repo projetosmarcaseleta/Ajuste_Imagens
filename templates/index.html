@@ -828,6 +828,7 @@
         const panel = document.getElementById('am-validation-panel');
         grid.innerHTML = '';
         panel.style.display = 'block';
+        setTimeout(() => panel.scrollIntoView({ behavior: 'smooth' }), 100);
 
         if (!items || items.length === 0) {
             grid.innerHTML = '<p style="color: #aaa; grid-column: span 3;">Nenhuma foto encontrada para validação.</p>';

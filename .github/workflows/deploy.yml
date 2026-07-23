@@ -68,5 +68,5 @@ jobs:
               echo "Baixando isnet-general-use.onnx..."
               curl -L -s https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx -o u2net_models/isnet-general-use.onnx
             fi
-            # Atualiza e recria o container com as mudanças de código sem derrubar a rede
-            docker compose up -d --build || docker-compose up -d --build
+            # Atualiza e recria o container com as mudanças de código
+            docker-compose up -d --build

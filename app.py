@@ -419,6 +419,7 @@ def _process_am_job_worker(job_id, oi, skus, token, delete_old, model_key=None):
 
         ok_total = sum(1 for r in results if r["status"] == "PENDENTE")
         err_total = len(results) - ok_total
+        emit_event(job_id, {"event": "log", "tp": "ok", "msg": f"🎉 Prévias geradas com sucesso! (Total: {len(results)}, OK: {ok_total}, Erros: {err_total})"})
         emit_event(job_id, {
             "event": "preview_complete",
             "total": len(results),
@@ -570,6 +571,7 @@ def api_progress(job_id):
                 data = q.get(timeout=15)
                 yield f"data: {json.dumps(data)}\n\n"
                 if data.get("event") in ("complete", "error", "done", "preview_complete"):
+                    time.sleep(0.5)
                     break
             except Empty:
                 yield ": heartbeat\n\n"
