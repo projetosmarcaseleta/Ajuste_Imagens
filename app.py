@@ -240,7 +240,7 @@ def _process_one_foto_am_preview(job_id, foto, index, total, opts):
             f.write(buf.getvalue())
             
         result["filename"] = filename
-        result["nova_url"] = f"/temp/{filename}"
+        result["nova_url"] = f"{SELF_BASE}/temp/{filename}"
         result["status"] = "PENDENTE"
         emit_event(job_id, {"event": "log", "tp": "ok", "msg": f"   ✅ Prévia gerada!"})
         
@@ -262,7 +262,9 @@ def _upload_one_foto_to_am(job_id, item, token, delete_old):
     if not src_url:
         raise Exception("URL temporária ausente")
     
-    if src_url.startswith("/"):
+    if src_url.startswith("/background-remover/"):
+        full_url = f"https://app.marcaseleta.shop{src_url}"
+    elif src_url.startswith("/"):
         full_url = f"{SELF_BASE}{src_url}"
     else:
         full_url = src_url
@@ -570,7 +572,7 @@ def api_progress(job_id):
             try:
                 data = q.get(timeout=15)
                 yield f"data: {json.dumps(data)}\n\n"
-                if data.get("event") in ("complete", "error", "done", "preview_complete"):
+                if data.get("event") in ("complete", "error", "done", "preview_complete", "commit_complete"):
                     time.sleep(0.5)
                     break
             except Empty:
@@ -624,7 +626,7 @@ def api_reprocess_item(job_id):
             f.write(buf.getvalue())
             
         target_item["filename"] = filename
-        target_item["nova_url"] = f"/temp/{filename}"
+        target_item["nova_url"] = f"{SELF_BASE}/temp/{filename}"
         target_item["model_used"] = model_key
         target_item["status"] = "PENDENTE"
         target_item["motivo_erro"] = None

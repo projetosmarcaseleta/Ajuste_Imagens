@@ -650,6 +650,14 @@
         
         amProcessBtn.disabled = true;
         amLog.innerHTML = '';
+        document.getElementById('am-validation-panel').style.display = 'none';
+        currentAMJobItems = [];
+        const oldCommitBtn = document.getElementById('am-commit-btn');
+        if (oldCommitBtn) {
+            oldCommitBtn.disabled = false;
+            oldCommitBtn.innerHTML = '🚀 Enviar Aprovadas ao AnyMarket';
+        }
+
         document.getElementById('am-progress').style.display = 'block';
         document.getElementById('am-progress').classList.add('active');
         document.getElementById('am-progress-bar').style.width = '0%';
@@ -744,7 +752,7 @@
                     document.getElementById('am-progress-text').textContent = `${data.done} / ${data.total}`;
                     document.getElementById('am-progress-status').textContent = `Gerando prévias... ${pct}% (OK: ${data.ok}, Erros: ${data.erros})`;
                 } else if (data.event === 'preview_complete') {
-                    clearTimeout(heartbeatTimer);
+                    clearTimeout(heartbeatTimeout);
                     document.getElementById('am-progress-status').textContent = `🖼️ Prévias geradas! Analise as fotos na galeria abaixo e clique em "Enviar Aprovadas".`;
                     const amHeader = document.querySelector('#am-progress .progress-header h4');
                     if (amHeader) amHeader.innerHTML = '🖼️ Prévias Prontas — Aguardando Aprovação';
@@ -765,7 +773,7 @@
                     document.getElementById('am-progress-text').textContent = `${data.done} / ${data.total}`;
                     document.getElementById('am-progress-status').textContent = `Enviando ao AnyMarket... ${pct}% (OK: ${data.ok}, Erros: ${data.erros})`;
                 } else if (data.event === 'commit_complete') {
-                    clearTimeout(heartbeatTimer);
+                    clearTimeout(heartbeatTimeout);
                     document.getElementById('am-progress-status').textContent = `✅ Sincronização com AnyMarket concluída! (Total: ${data.total}, OK: ${data.ok}, Erros: ${data.erros})`;
                     const amHeader = document.querySelector('#am-progress .progress-header h4');
                     if (amHeader) amHeader.innerHTML = '✅ Envio Concluído!';
@@ -783,13 +791,13 @@
                     }
                     showToast('Fotos enviadas com sucesso ao AnyMarket!', 'success');
                 } else if (data.event === 'complete') {
-                    clearTimeout(heartbeatTimer);
+                    clearTimeout(heartbeatTimeout);
                     document.getElementById('am-progress-status').textContent = `✅ Concluído!`;
                     amEventSource.close();
                     amProcessBtn.disabled = false;
                     amCancelBtn.style.display = 'none';
                 } else if (data.event === 'error') {
-                    clearTimeout(heartbeatTimer);
+                    clearTimeout(heartbeatTimeout);
                     addAMLog(`Erro: ${data.msg}`, 'err');
                     document.getElementById('am-progress-status').textContent = `❌ Erro: ${data.msg}`;
                     const amHeaderErr = document.querySelector('#am-progress .progress-header h4');
@@ -806,7 +814,7 @@
         amEventSource.onerror = () => {
             reconnectAttempts++;
             if (reconnectAttempts >= 3) {
-                clearTimeout(heartbeatTimer);
+                clearTimeout(heartbeatTimeout);
                 amEventSource.close();
                 addAMLog('❌ Conexão perdida com o servidor. Verifique os logs do servidor.', 'err');
                 const amHeaderErr2 = document.querySelector('#am-progress .progress-header h4');
@@ -1046,6 +1054,7 @@
             if (!resp.ok || !data.ok) throw new Error(data.error || 'Erro ao iniciar commit');
 
             showToast('Sincronização com o AnyMarket iniciada!', 'info');
+            startAMProgress(currentAMJobId);
         } catch (e) {
             showToast('Erro: ' + e.message, 'error');
             commitBtn.disabled = false;
