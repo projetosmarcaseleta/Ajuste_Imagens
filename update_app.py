@@ -120,7 +120,17 @@ def _download_image(url):
 
 
 def _process_one_foto_am(job_id, foto, index, total, opts):
-    src_url = foto.get("standard_url") or foto.get("original_url")
+    # Sempre prioriza standard_url pois a url original pode expirar/não possuir mais a foto
+    standard_url = (foto.get("standard_url") or "").strip()
+    original_url = (foto.get("original_url") or "").strip()
+
+    urls_to_try = []
+    if standard_url:
+        urls_to_try.append(standard_url)
+    if original_url and original_url not in urls_to_try:
+        urls_to_try.append(original_url)
+
+    src_url = urls_to_try[0] if urls_to_try else None
     is_main = str(foto.get("main_photo")) == '1' or foto.get("main_photo") is True
     idx = int(foto.get("product_photo_index", 0))
     variacao = foto.get("variacao")
@@ -141,14 +151,32 @@ def _process_one_foto_am(job_id, foto, index, total, opts):
     delete_old = opts["deleteOld"]
     
     try:
-        if not src_url:
+        if not urls_to_try:
             raise Exception("URL da imagem ausente")
             
         emit_event(job_id, {"event": "log", "tp": "info", "msg": f"   🎨 Removendo fundo..."})
         
-        status, img_data = _download_image(src_url)
-        if status != 200 or not img_data:
-            raise Exception(f"Download falhou: HTTP {status}")
+        img_data = None
+        last_error_status = None
+        used_url = None
+
+        for url_candidate in urls_to_try:
+            try:
+                status, data = _download_image(url_candidate)
+                if status == 200 and data:
+                    img_data = data
+                    used_url = url_candidate
+                    break
+                else:
+                    last_error_status = status
+            except Exception as dl_err:
+                pass
+
+        if not img_data:
+            err_msg = f"Download falhou: HTTP {last_error_status}" if last_error_status else "Download falhou para todas as URLs disponíveis"
+            raise Exception(err_msg)
+
+        result["url_original"] = used_url
             
         result_img = compose_on_white(img_data)
         
