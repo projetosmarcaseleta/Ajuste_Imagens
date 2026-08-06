@@ -229,7 +229,7 @@ def _process_one_foto_am_preview(job_id, foto, index, total, opts):
         if is_job_cancelled(job_id):
             raise Exception("Cancelado pelo usuário")
 
-        result_img = compose_on_white(img_data, model_key=model_key)
+        result_img = compose_on_white(img_data, model_key=model_key, image_url=used_url)
         
         filename = f"bgrem_{int(time.time())}_{uuid.uuid4().hex[:6]}.jpg"
         filepath = TEMP_DIR / filename
@@ -504,14 +504,26 @@ def index():
 @app.route("/api/models")
 def api_models():
     """Retorna os modelos de IA disponíveis para remoção de fundo."""
-    models = []
-    for key, rembg_name in AVAILABLE_MODELS.items():
-        models.append({
-            "key": key,
-            "label": "Padrão (rápido)" if key == "padrao" else "Preciso (detalhado)",
-            "description": "U²-Net — rápido, boa qualidade geral" if key == "padrao" else "BiRefNet — mais lento, melhor precisão em produtos complexos",
-            "default": key == DEFAULT_MODEL,
-        })
+    models = [
+        {
+            "key": "magnific",
+            "label": "✨ Magnific AI (Pago - Principal)",
+            "description": "Magnific AI API — alta precisão e qualidade máxima (modo principal)",
+            "default": True,
+        },
+        {
+            "key": "preciso",
+            "label": "🎯 Preciso (ISNet - Secundário)",
+            "description": "ISNet / BiRefNet — processamento local detalhado",
+            "default": False,
+        },
+        {
+            "key": "padrao",
+            "label": "⚡ Padrão (U²-Net - Secundário)",
+            "description": "U²-Net — processamento local rápido",
+            "default": False,
+        }
+    ]
     return jsonify({"models": models})
 
 
@@ -615,7 +627,7 @@ def api_reprocess_item(job_id):
             target_item["motivo_erro"] = f"Download da original falhou: HTTP {status}"
             return jsonify({"ok": False, "error": target_item["motivo_erro"]}), 400
             
-        result_img = compose_on_white(img_data, model_key=model_key)
+        result_img = compose_on_white(img_data, model_key=model_key, image_url=src_url)
         
         filename = f"bgrem_{int(time.time())}_{uuid.uuid4().hex[:6]}.jpg"
         filepath = TEMP_DIR / filename

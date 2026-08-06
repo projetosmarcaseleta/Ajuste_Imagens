@@ -64,17 +64,24 @@
                 <label class="model-selector-label">🤖 Modelo de IA:</label>
                 <div class="model-options">
                     <label class="model-option">
-                        <input type="radio" name="preview-model" value="padrao" checked>
+                        <input type="radio" name="preview-model" value="magnific" checked>
                         <div class="model-option-content">
-                            <span class="model-option-name">⚡ Padrão (rápido)</span>
-                            <span class="model-option-desc">U²-Net — rápido, boa qualidade geral</span>
+                            <span class="model-option-name">✨ Magnific AI (Pago - Principal)</span>
+                            <span class="model-option-desc">Magnific AI API — máxima qualidade e precisão</span>
                         </div>
                     </label>
                     <label class="model-option">
                         <input type="radio" name="preview-model" value="preciso">
                         <div class="model-option-content">
-                            <span class="model-option-name">🎯 Preciso (detalhado)</span>
-                            <span class="model-option-desc">BiRefNet — mais lento, melhor precisão</span>
+                            <span class="model-option-name">🎯 Preciso (Secundário)</span>
+                            <span class="model-option-desc">ISNet — processamento local detalhado</span>
+                        </div>
+                    </label>
+                    <label class="model-option">
+                        <input type="radio" name="preview-model" value="padrao">
+                        <div class="model-option-content">
+                            <span class="model-option-name">⚡ Padrão (Secundário)</span>
+                            <span class="model-option-desc">U²-Net — processamento local rápido</span>
                         </div>
                     </label>
                 </div>
@@ -130,17 +137,24 @@
                 <label class="model-selector-label">🤖 Modelo de IA:</label>
                 <div class="model-options">
                     <label class="model-option">
-                        <input type="radio" name="batch-model" value="padrao" checked>
+                        <input type="radio" name="batch-model" value="magnific" checked>
                         <div class="model-option-content">
-                            <span class="model-option-name">⚡ Padrão (rápido)</span>
-                            <span class="model-option-desc">U²-Net — rápido, boa qualidade geral</span>
+                            <span class="model-option-name">✨ Magnific AI (Pago - Principal)</span>
+                            <span class="model-option-desc">Magnific AI API — máxima qualidade e precisão</span>
                         </div>
                     </label>
                     <label class="model-option">
                         <input type="radio" name="batch-model" value="preciso">
                         <div class="model-option-content">
-                            <span class="model-option-name">🎯 Preciso (detalhado)</span>
-                            <span class="model-option-desc">BiRefNet — mais lento, melhor precisão</span>
+                            <span class="model-option-name">🎯 Preciso (Secundário)</span>
+                            <span class="model-option-desc">ISNet — processamento local detalhado</span>
+                        </div>
+                    </label>
+                    <label class="model-option">
+                        <input type="radio" name="batch-model" value="padrao">
+                        <div class="model-option-content">
+                            <span class="model-option-name">⚡ Padrão (Secundário)</span>
+                            <span class="model-option-desc">U²-Net — processamento local rápido</span>
                         </div>
                     </label>
                 </div>
@@ -213,17 +227,24 @@
                 <label class="model-selector-label">🤖 Modelo de IA:</label>
                 <div class="model-options">
                     <label class="model-option">
-                        <input type="radio" name="am-model" value="padrao" checked>
+                        <input type="radio" name="am-model" value="magnific" checked>
                         <div class="model-option-content">
-                            <span class="model-option-name">⚡ Padrão (rápido)</span>
-                            <span class="model-option-desc">U²-Net — rápido, boa qualidade geral</span>
+                            <span class="model-option-name">✨ Magnific AI (Pago - Principal)</span>
+                            <span class="model-option-desc">Magnific AI API — máxima qualidade e precisão</span>
                         </div>
                     </label>
                     <label class="model-option">
                         <input type="radio" name="am-model" value="preciso">
                         <div class="model-option-content">
-                            <span class="model-option-name">🎯 Preciso (detalhado)</span>
-                            <span class="model-option-desc">BiRefNet — mais lento, melhor precisão</span>
+                            <span class="model-option-name">🎯 Preciso (Secundário)</span>
+                            <span class="model-option-desc">ISNet — processamento local detalhado</span>
+                        </div>
+                    </label>
+                    <label class="model-option">
+                        <input type="radio" name="am-model" value="padrao">
+                        <div class="model-option-content">
+                            <span class="model-option-name">⚡ Padrão (Secundário)</span>
+                            <span class="model-option-desc">U²-Net — processamento local rápido</span>
                         </div>
                     </label>
                 </div>
@@ -778,7 +799,10 @@
                     const amHeader = document.querySelector('#am-progress .progress-header h4');
                     if (amHeader) amHeader.innerHTML = '✅ Envio Concluído!';
                     document.getElementById('am-progress-bar').style.width = '100%';
-                    amEventSource.close();
+                    if (amEventSource) {
+                        amEventSource.close();
+                        amEventSource = null;
+                    }
                     amProcessBtn.disabled = false;
                     amCancelBtn.style.display = 'none';
                     const commitBtn = document.getElementById('am-commit-btn');
@@ -786,9 +810,16 @@
                         commitBtn.disabled = false;
                         commitBtn.innerHTML = '🚀 Enviar Aprovadas ao AnyMarket';
                     }
-                    if (data.items) {
-                        renderValidationGrid(data.items);
-                    }
+                    
+                    // Limpa automaticamente o campo de SKUs e esconde a galeria concluída
+                    setTimeout(() => {
+                        document.getElementById('am-skus-input').value = '';
+                        document.getElementById('am-validation-panel').style.display = 'none';
+                        currentAMJobItems = [];
+                        currentAMJobId = null;
+                        addAMLog('🧹 Formulário e galeria limpos. Pronto para a próxima leva de SKUs!', 'info');
+                    }, 2500);
+
                     showToast('Fotos enviadas com sucesso ao AnyMarket!', 'success');
                 } else if (data.event === 'complete') {
                     clearTimeout(heartbeatTimeout);
@@ -891,8 +922,9 @@
 
                 <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px;">
                     <select class="form-input" id="model-${item.id}" style="padding: 4px 8px; font-size: 12px; flex: 1;">
-                        <option value="padrao" ${item.model_used === 'padrao' ? 'selected' : ''}>⚡ Padrão (u2net)</option>
-                        <option value="preciso" ${item.model_used === 'preciso' ? 'selected' : ''}>🎯 Preciso (isnet-general-use)</option>
+                        <option value="magnific" ${item.model_used === 'magnific' || !item.model_used ? 'selected' : ''}>✨ Magnific AI (Principal)</option>
+                        <option value="preciso" ${item.model_used === 'preciso' ? 'selected' : ''}>🎯 Preciso (ISNet)</option>
+                        <option value="padrao" ${item.model_used === 'padrao' ? 'selected' : ''}>⚡ Padrão (U²-Net)</option>
                     </select>
                     <button class="btn btn-secondary btn-sm" onclick="reprocessItem('${item.id}')" id="btn-reprocess-${item.id}" style="padding: 4px 10px; font-size: 12px;" title="Reprocessar foto com o modelo selecionado">
                         🔄 Refazer
@@ -973,7 +1005,7 @@
 
         const modelSelect = document.getElementById(`model-${itemId}`);
         const btnReprocess = document.getElementById(`btn-reprocess-${itemId}`);
-        const selectedModel = modelSelect ? modelSelect.value : 'padrao';
+        const selectedModel = modelSelect ? modelSelect.value : 'magnific';
 
         item.status = 'REPROCESSANDO';
         updateCardUI(item);

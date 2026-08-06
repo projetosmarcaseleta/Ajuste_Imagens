@@ -20,10 +20,15 @@ Uso — planilha:
 import argparse
 import io
 import gc
+import json
 import logging
+import ssl
 import sys
 import threading
+import time
 import urllib.request
+import urllib.parse
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from urllib.parse import urlparse
@@ -60,70 +65,57 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Processamento de imagem — suporte a múltiplos modelos
+# Processamento de imagem — suporte a múltiplos modelos (Magnific AI + rembg)
 # ---------------------------------------------------------------------------
-# Modelos disponíveis (chave interna → nome rembg)
-# ---------------------------------------------------------------------------
-#
-# padrao  → u2net          ~170MB  Rápido, qualidade geral boa
-# preciso → isnet-general-use ~175MB  Bordas mais precisas, melhor p/ produtos
-#           ↑ mesma faixa de memória que u2net, sem risco de OOM,
-#             qualidade nitidamente superior — especialmente em cabelos,
-#             transparências e bordas complexas de produtos.
-#
+MAGNIFIC_API_URL = "https://api.magnific.com/v1/ai/beta/remove-background"
+MAGNIFIC_API_KEY = "MSb90f49c1a943411b974249bd8ad35b55"
+SELF_BASE_PUBLIC = "https://app.marcaseleta.shop/background-remover"
+
 AVAILABLE_MODELS = {
-    "padrao":  "u2net",              # ~170MB, cache permanente
-    "preciso": "isnet-general-use",  # ~175MB, cache permanente, qualidade superior
+    "magnific": "Magnific AI (Pago - Principal)",
+    "preciso":  "isnet-general-use",  # BiRefNet / ISNet (~175MB, secundário)
+    "padrao":   "u2net",              # U²-Net (~170MB, secundário)
 }
-DEFAULT_MODEL = "padrao"
+DEFAULT_MODEL = "magnific"
 
 _sessions: dict[str, object] = {}
 _sessions_lock = threading.Lock()
 
-# Semáforo: apenas 1 inferência por vez.
-# Evita picos de memória quando múltiplas threads processam em paralelo.
+# Semáforo: apenas 1 inferência por vez nos modelos locais rembg.
 _inference_sem = threading.Semaphore(1)
 
-# Tamanho máximo (lado maior) antes da inferência.
-# 1500px é o ponto ideal qualidade/memória para imagens de produtos e-commerce.
 MAX_INFERENCE_SIZE = 1500
 
 
 def get_rembg_session(model_key: str | None = None):
-    """Retorna a sessão rembg para o modelo solicitado (cache permanente, thread-safe)."""
-    if model_key is None:
-        model_key = DEFAULT_MODEL
-    model_key = model_key if model_key in AVAILABLE_MODELS else DEFAULT_MODEL
+    """Retorna a sessão rembg para o modelo local solicitado (cache permanente, thread-safe)."""
+    if model_key is None or model_key not in AVAILABLE_MODELS or model_key == "magnific":
+        model_key = "preciso"
 
-    # Fast path sem lock
     if model_key in _sessions:
         return _sessions[model_key]
 
     with _sessions_lock:
         if model_key not in _sessions:
             model_name = AVAILABLE_MODELS[model_key]
-            logger.info("Carregando modelo rembg: %s (%s)...", model_key, model_name)
+            logger.info("Carregando modelo rembg local: %s (%s)...", model_key, model_name)
             try:
                 _sessions[model_key] = new_session(model_name)
                 gc.collect()
-                logger.info("Modelo '%s' carregado com sucesso.", model_key)
+                logger.info("Modelo local '%s' carregado com sucesso.", model_key)
             except Exception as exc:
-                logger.error("Erro ao carregar modelo %s: %s", model_name, exc)
+                logger.error("Erro ao carregar modelo local %s: %s", model_name, exc)
                 return None
     return _sessions[model_key]
 
 
 def preload_model():
-    """Pré-carrega ambos os modelos no boot (antes do Gunicorn aceitar requisições).
-
-    Ambos têm footprint ~170-175MB — seguro manter em cache permanente,
-    sem risco de OOM mesmo com múltiplas threads processando em paralelo.
-    """
-    for key in AVAILABLE_MODELS:
-        logger.info("Pré-carregando modelo: %s (%s)...", key, AVAILABLE_MODELS[key])
+    """Pré-carrega os modelos locais em segundo plano (antes de aceitar requisições)."""
+    for key in ["preciso", "padrao"]:
+        logger.info("Pré-carregando modelo local (segundo plano): %s (%s)...", key, AVAILABLE_MODELS[key])
         session = get_rembg_session(key)
         if session:
-            logger.info("Modelo '%s' pronto.", key)
+            logger.info("Modelo local '%s' pronto.", key)
         else:
             logger.warning("Falha ao pré-carregar '%s'.", key)
     gc.collect()
@@ -140,20 +132,84 @@ def _resize_if_needed(img: Image.Image, max_size: int = MAX_INFERENCE_SIZE) -> I
     return img.resize((new_w, new_h), Image.LANCZOS)
 
 
-def compose_on_white(image_bytes: bytes, model_key: str | None = None) -> Image.Image:
+def remove_background_magnific(image_bytes: bytes | None = None, image_url: str | None = None) -> Image.Image:
+    """
+    Remove o fundo utilizando a API oficial da Magnific AI.
+    - Se 'image_url' for fornecida (URL HTTP/HTTPS pública), utiliza diretamente.
+    - Se apenas 'image_bytes' for fornecida, gera temporariamente em TEMP_DIR para expor a URL pública via app.
+    """
+    target_url = image_url
+
+    if not target_url or not (target_url.startswith("http://") or target_url.startswith("https://")):
+        if image_bytes:
+            filename = f"magnific_in_{int(time.time())}_{uuid.uuid4().hex[:6]}.jpg"
+            temp_dir = Path(__file__).resolve().parent / "temp"
+            temp_dir.mkdir(exist_ok=True)
+            temp_path = temp_dir / filename
+            with open(temp_path, "wb") as f:
+                f.write(image_bytes)
+            target_url = f"{SELF_BASE_PUBLIC}/temp/{filename}"
+        else:
+            raise ValueError("Sem 'image_url' nem 'image_bytes' para Magnific AI.")
+
+    logger.info("Enviando requisição à Magnific AI API (image_url=%s)...", target_url)
+
+    headers = {
+        "x-magnific-api-key": MAGNIFIC_API_KEY,
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+
+    data = urllib.parse.urlencode({"image_url": target_url}).encode("utf-8")
+    req = urllib.request.Request(MAGNIFIC_API_URL, data=data, headers=headers)
+
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    with urllib.request.urlopen(req, timeout=90, context=ctx) as resp:
+        if resp.status != 200:
+            raise Exception(f"Magnific API retornou HTTP {resp.status}")
+        res_data = json.loads(resp.read().decode("utf-8"))
+
+    output_url = res_data.get("url") or res_data.get("high_resolution")
+    if not output_url:
+        raise Exception("Magnific API não retornou URL da imagem no resultado.")
+
+    logger.info("Baixando imagem com fundo removido da Magnific AI: %s", output_url)
+    req_out = urllib.request.Request(output_url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req_out, timeout=60, context=ctx) as resp_out:
+        out_bytes = resp_out.read()
+
+    foreground = Image.open(io.BytesIO(out_bytes)).convert("RGBA")
+    white_bg = Image.new("RGBA", foreground.size, (255, 255, 255, 255))
+    white_bg.paste(foreground, mask=foreground.split()[3])
+    result = white_bg.convert("RGB")
+    foreground.close()
+    white_bg.close()
+    return result
+
+
+def compose_on_white(image_bytes: bytes, model_key: str | None = None, image_url: str | None = None) -> Image.Image:
     """Remove o fundo e compõe sobre canvas branco puro. Retorna imagem RGB.
 
-    - Ambos os modelos ficam em cache permanente (~170-175MB cada).
-    - Semáforo garante 1 inferência por vez (evita picos de RAM em lotes).
-    - Imagens redimensionadas a MAX_INFERENCE_SIZE px antes da inferência.
-    - Resultado é sempre JPEG RGB sobre fundo #FFFFFF.
+    - Prioriza Magnific AI (modo principal).
+    - Se Magnific AI falhar (ex: ambiente sem acesso à internet ou URL inacessível),
+      realiza fallback automático para o modelo secundário local ('preciso').
+    - Suporta seleção explícita dos modelos secundários 'preciso' ou 'padrao'.
     """
     if model_key is None or model_key not in AVAILABLE_MODELS:
         model_key = DEFAULT_MODEL
 
-    # Redimensiona antes da inferência para controlar pico de memória
+    if model_key == "magnific":
+        try:
+            logger.info("Executando remoção de fundo via Magnific AI (modo principal)...")
+            return remove_background_magnific(image_bytes=image_bytes, image_url=image_url)
+        except Exception as exc:
+            logger.warning("Erro/Fallback no Magnific AI: %s. Utilizando modelo secundário 'preciso' (local)...", exc)
+            model_key = "preciso"
+
+    # Processamento com modelo secundário local (rembg)
     src_img = Image.open(io.BytesIO(image_bytes))
-    # HEIC/HEIF: converte para RGB (remove canal alpha se houver)
     if src_img.mode not in ("RGB", "RGBA"):
         src_img = src_img.convert("RGB")
     src_img = _resize_if_needed(src_img)
@@ -166,8 +222,8 @@ def compose_on_white(image_bytes: bytes, model_key: str | None = None) -> Image.
     with _inference_sem:
         session = get_rembg_session(model_key)
         if session is None:
-            logger.warning("Sessão '%s' indisponível; usando padrão.", model_key)
-            session = get_rembg_session(DEFAULT_MODEL)
+            logger.warning("Sessão '%s' indisponível; usando secundário 'preciso'.", model_key)
+            session = get_rembg_session("preciso") or get_rembg_session("padrao")
         output_bytes = remove(image_bytes_resized, session=session)
 
     del image_bytes_resized
@@ -180,7 +236,6 @@ def compose_on_white(image_bytes: bytes, model_key: str | None = None) -> Image.
     foreground.close()
     white_bg.close()
     return result
-
 
 
 def save_image(img: Image.Image, output_path: Path) -> None:
@@ -196,11 +251,11 @@ def save_image(img: Image.Image, output_path: Path) -> None:
 # Modo 1 — pasta local
 # ---------------------------------------------------------------------------
 
-def process_from_file(input_path: Path, output_path: Path) -> tuple[str, bool, str]:
+def process_from_file(input_path: Path, output_path: Path, model_key: str | None = None) -> tuple[str, bool, str]:
     try:
         with open(input_path, "rb") as f:
             data = f.read()
-        result = compose_on_white(data)
+        result = compose_on_white(data, model_key=model_key)
         save_image(result, output_path)
         return input_path.name, True, ""
     except Exception as exc:
@@ -226,14 +281,14 @@ def filename_from_url(url: str) -> str:
     return name
 
 
-def process_from_url(url: str, output_path: Path) -> tuple[str, bool, str]:
+def process_from_url(url: str, output_path: Path, model_key: str | None = None) -> tuple[str, bool, str]:
     label = output_path.name
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
         req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = resp.read()
-        result = compose_on_white(data)
+        result = compose_on_white(data, model_key=model_key, image_url=url)
         save_image(result, output_path)
         return label, True, ""
     except Exception as exc:
